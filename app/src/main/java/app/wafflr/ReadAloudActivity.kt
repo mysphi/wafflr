@@ -9,7 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Appears as "Read aloud" in the text-selection menu of other apps (Android's PROCESS_TEXT).
+ * Appears as "Read with Wafflr" in the text-selection menu of other apps (Android's PROCESS_TEXT).
  * This is the reliable way to read selected text, even in apps that hide selections from
  * accessibility services.
  */
@@ -20,7 +20,7 @@ class ReadAloudActivity : Activity() {
         super.onCreate(savedInstanceState)
         val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty().trim()
         val from = callingPackage ?: referrer?.host ?: "unknown app"
-        SelectionLog.add("[$from] SELECTION MENU 'Read aloud': ${text.length} chars received")
+        SelectionLog.add("[$from] SELECTION MENU 'Read with Wafflr': ${text.length} chars received")
 
         val pad = (16 * resources.displayMetrics.density).toInt()
         status = TextView(this).apply { textSize = 16f; setPadding(0, 0, 0, pad) }

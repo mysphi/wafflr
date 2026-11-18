@@ -133,7 +133,7 @@ class MainActivity : Activity() {
         root.addView(body(
             "a) Turn on the Wafflr selection probe in Accessibility settings. On a sideloaded app, Android may block this the first time: open App info for Wafflr, tap the ⋮ menu, choose 'Allow restricted settings', then try again.\n" +
             "b) In Chrome, Gmail, Google News and a PDF, long-press to select some text. Each selection should add a line below.\n" +
-            "c) Also tap 'Read aloud' in the selection menu (it may be under ⋮). It reads with the voice chosen above."
+            "c) Also tap 'Read with Wafflr' in the selection menu (it may be under ⋮). It reads with the voice chosen above."
         ))
         probeStatus = body("")
         root.addView(probeStatus)
