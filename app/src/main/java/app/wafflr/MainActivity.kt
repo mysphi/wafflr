@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var results: TextView
     private lateinit var probeStatus: TextView
     private lateinit var log: TextView
+    private lateinit var crash: TextView
     private val logListener: () -> Unit = { runOnUiThread { refreshLog() } }
     private val speech get() = WafflrApp.instance.speech
     private val store get() = WafflrApp.instance.voices
@@ -54,7 +55,9 @@ class MainActivity : Activity() {
         }
 
         root.addView(heading("Wafflr · Phase 0 tests"))
-        root.addView(body(SpeechEngine.deviceLine()))
+        root.addView(body(SpeechEngine.deviceLine() + " · build " + packageManager.getPackageInfo(packageName, 0).versionName))
+        crash = mono("")
+        root.addView(crash)
 
         // --- Voice test -------------------------------------------------------------------
         root.addView(heading("1. Voice speed test"))
@@ -146,6 +149,9 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(root) })
         refreshResults()
+        val lastCrash = CrashReport.lastCrash(this)
+        crash.text = if (lastCrash.isEmpty()) "" else "Last time the app closed unexpectedly:\n$lastCrash\n(Included when you tap Copy results.)"
+        crash.visibility = if (lastCrash.isEmpty()) View.GONE else View.VISIBLE
     }
 
     override fun onResume() {
@@ -205,6 +211,8 @@ class MainActivity : Activity() {
         append("App version ").append(packageManager.getPackageInfo(packageName, 0).versionName).append("\n\n")
         append("VOICE RESULTS\n").append(prefs.results.ifEmpty { "none\n" }).append("\n")
         append("SELECTION LOG\n").append(SelectionLog.read().ifEmpty { "none\n" })
+        val lastCrash = CrashReport.lastCrash(this@MainActivity)
+        if (lastCrash.isNotEmpty()) append("\nLAST CRASH\n").append(lastCrash).append("\n")
     }
 
     private fun isProbeEnabled(): Boolean {

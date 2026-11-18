@@ -11,6 +11,7 @@ class WafflrApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        CrashReport.install(this)
         voices = VoiceStore(this)
         speech = SpeechEngine(voices)
         SelectionLog.init(this)

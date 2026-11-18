@@ -90,12 +90,18 @@ class SpeechEngine(private val store: VoiceStore) {
                 val start = SystemClock.elapsedRealtime()
                 var firstAudio = -1L
                 var samples = 0L
-                engine.generateWithCallback(text = text, sid = voice.sid, speed = speed) { chunk ->
-                    if (firstAudio < 0) firstAudio = SystemClock.elapsedRealtime() - start
-                    samples += chunk.size
-                    p.enqueue(chunk.copyOf())
-                    if (stopFlag.get()) 0 else 1
+                // sherpa-onnx's native code looks up a method with the exact signature
+                // invoke(float[]): Integer. A plain Kotlin lambda doesn't have one (Kotlin 2
+                // compiles lambdas without it), which crashed the app, so use an explicit class.
+                val onChunk = object : (FloatArray) -> Int {
+                    override fun invoke(chunk: FloatArray): Int {
+                        if (firstAudio < 0) firstAudio = SystemClock.elapsedRealtime() - start
+                        samples += chunk.size
+                        p.enqueue(chunk.copyOf())
+                        return if (stopFlag.get()) 0 else 1
+                    }
                 }
+                engine.generateWithCallback(text = text, sid = voice.sid, speed = speed, callback = onChunk)
                 val synthMs = SystemClock.elapsedRealtime() - start
                 p.finish()
                 p.awaitEnd()

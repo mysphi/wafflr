@@ -44,6 +44,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        // sherpa-onnx calls Kotlin callbacks through JNI by their typed invoke() method,
+        // which only class-based lambdas have.
+        freeCompilerArgs += listOf("-Xlambdas=class")
     }
 
     androidResources {
