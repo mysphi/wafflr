@@ -44,8 +44,37 @@ object CrashReport {
             ApplicationExitInfo.REASON_LOW_MEMORY -> "closed for low memory"
             else -> return saved
         }
-        val line = "${stamp(info.timestamp)} last exit: $kind. ${info.description ?: ""}".trim()
+        var line = "${stamp(info.timestamp)} last exit: $kind. ${info.description ?: ""}".trim()
+        if (info.reason == ApplicationExitInfo.REASON_CRASH_NATIVE) {
+            val trace = nativeTrace(info)
+            if (trace.isNotEmpty()) line += "\n$trace"
+        }
         return if (saved.isNotEmpty() && info.reason == ApplicationExitInfo.REASON_CRASH) "$line\n$saved" else line
+    }
+
+    /**
+     * Android keeps a binary "tombstone" for native crashes. We can't parse it fully here, but
+     * its readable strings include the crash signal, abort message and function names.
+     */
+    private fun nativeTrace(info: ApplicationExitInfo): String = try {
+        val bytes = info.traceInputStream?.use { it.readBytes() } ?: ByteArray(0)
+        val runs = mutableListOf<String>()
+        val sb = StringBuilder()
+        for (b in bytes) {
+            val c = b.toInt() and 0xff
+            if (c in 32..126) sb.append(c.toChar()) else {
+                if (sb.length >= 6) runs += sb.toString()
+                sb.setLength(0)
+            }
+        }
+        if (sb.length >= 6) runs += sb.toString()
+        val keys = listOf("SIG", "abort", "Abort", "sherpa", "espeak", "piper", "onnx", "Ort", "kokoro", "Kokoro", "terminat", "exception", "Exception", "fault", "std::")
+        runs.filter { r -> keys.any { r.contains(it) } }
+            .distinct()
+            .take(40)
+            .joinToString("\n") { "  " + it.take(200) }
+    } catch (t: Throwable) {
+        "  (could not read crash trace: ${t.message})"
     }
 
     fun clear() {

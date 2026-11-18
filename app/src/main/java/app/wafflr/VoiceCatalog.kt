@@ -37,15 +37,17 @@ object VoiceCatalog {
     private const val US = "lexicon-us-en.txt"
 
     // Kokoro v1.0 speaker ids, matching the sample clips you listened to.
+    // lang stays empty: setting it makes sherpa-onnx skip the lexicon and hand every word to
+    // espeak with that voice name, which crashed natively on the phone. The lexicon picks the accent.
     val voices = listOf(
         Voice("piper-alan", "Piper · Alan (British male)", piperAlan),
         Voice("piper-jenny", "Piper · Jenny (British female)", piperJenny),
-        Voice("kokoro-george", "Kokoro · George (British male)", kokoro, sid = 26, lexicon = GB, lang = "en-gb"),
-        Voice("kokoro-daniel", "Kokoro · Daniel (British male)", kokoro, sid = 24, lexicon = GB, lang = "en-gb"),
-        Voice("kokoro-emma", "Kokoro · Emma (British female)", kokoro, sid = 21, lexicon = GB, lang = "en-gb"),
-        Voice("kokoro-lily", "Kokoro · Lily (British female)", kokoro, sid = 23, lexicon = GB, lang = "en-gb"),
-        Voice("kokoro-michael", "Kokoro · Michael (American male)", kokoro, sid = 16, lexicon = US, lang = "en-us"),
-        Voice("kokoro-heart", "Kokoro · Heart (American female)", kokoro, sid = 3, lexicon = US, lang = "en-us"),
+        Voice("kokoro-george", "Kokoro · George (British male)", kokoro, sid = 26, lexicon = GB, lang = ""),
+        Voice("kokoro-daniel", "Kokoro · Daniel (British male)", kokoro, sid = 24, lexicon = GB, lang = ""),
+        Voice("kokoro-emma", "Kokoro · Emma (British female)", kokoro, sid = 21, lexicon = GB, lang = ""),
+        Voice("kokoro-lily", "Kokoro · Lily (British female)", kokoro, sid = 23, lexicon = GB, lang = ""),
+        Voice("kokoro-michael", "Kokoro · Michael (American male)", kokoro, sid = 16, lexicon = US, lang = ""),
+        Voice("kokoro-heart", "Kokoro · Heart (American female)", kokoro, sid = 3, lexicon = US, lang = ""),
     )
 
     val default: Voice = voices.first()
