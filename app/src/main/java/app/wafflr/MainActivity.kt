@@ -180,7 +180,12 @@ class MainActivity : Activity() {
                 refreshResults()
                 refreshPack()
             }
-            override fun onError(message: String) = runOnUiThread { status.text = "Error: $message" }
+            override fun onError(message: String) = runOnUiThread {
+                status.text = "Error: $message"
+                prefs.results = "ERROR with ${prefs.voice.label}:\n$message\n\n" + prefs.results
+                refreshResults()
+                refreshPack()
+            }
         })
     }
 

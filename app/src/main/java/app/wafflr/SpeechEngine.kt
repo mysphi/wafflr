@@ -80,7 +80,14 @@ class SpeechEngine(private val store: VoiceStore) {
                     tts?.release()
                     tts = null
                     val t0 = SystemClock.elapsedRealtime()
-                    tts = OfflineTts(config = buildConfig(voice, threads))
+                    checkFiles(voice)
+                    val created = OfflineTts(config = buildConfig(voice, threads))
+                    // If sherpa-onnx rejects the config it returns a null engine instead of
+                    // throwing, and the next call crashes the whole app. Check first.
+                    if (nativePointer(created) == 0L) {
+                        error("The voice engine could not load ${voice.label}.")
+                    }
+                    tts = created
                     loadMs = SystemClock.elapsedRealtime() - t0
                     loadedKey = key
                 }
@@ -113,7 +120,9 @@ class SpeechEngine(private val store: VoiceStore) {
                     )
                 )
             } catch (t: Throwable) {
-                listener.onError(t.message ?: t.toString())
+                loadedKey = null
+                val log = engineLog()
+                listener.onError((t.message ?: t.toString()) + if (log.isNotEmpty()) "\nEngine log:\n$log" else "")
             } finally {
                 player = null
                 isSpeaking = false
@@ -124,6 +133,42 @@ class SpeechEngine(private val store: VoiceStore) {
     fun stop() {
         stopFlag.set(true)
         player?.stopNow()
+    }
+
+    /** Same checks sherpa-onnx makes, but with a readable message instead of a crash. */
+    private fun checkFiles(voice: Voice) {
+        val dir = store.dirFor(voice.pack)
+        val needed = mutableListOf("tokens.txt", "espeak-ng-data/phontab", "espeak-ng-data/phondata", "espeak-ng-data/phonindex", "espeak-ng-data/intonations")
+        if (voice.pack.kind == EngineKind.KOKORO) {
+            needed += listOf("model.onnx", "voices.bin")
+            if (voice.lexicon.isNotEmpty()) needed += voice.lexicon
+        }
+        val missing = needed.filter { !File(dir, it).isFile }
+        if (missing.isNotEmpty()) {
+            store.delete(voice.pack) // force a clean re-download next time
+            val present = dir.list()?.sorted()?.joinToString(", ") ?: "folder missing"
+            error("Voice files incomplete: missing ${missing.joinToString(", ")}. Found: $present. Tap Speak to download again.")
+        }
+    }
+
+    private fun nativePointer(t: OfflineTts): Long = try {
+        OfflineTts::class.java.getDeclaredField("ptr").apply { isAccessible = true }.getLong(t)
+    } catch (_: Throwable) {
+        -1L // can't tell; carry on
+    }
+
+    /** Last lines the voice engine wrote to the system log (only this app's own lines). */
+    private fun engineLog(): String = try {
+        val proc = ProcessBuilder("logcat", "-d", "-t", "400", "-v", "brief", "--pid", android.os.Process.myPid().toString())
+            .redirectErrorStream(true).start()
+        val lines = proc.inputStream.bufferedReader().readLines()
+        proc.waitFor()
+        lines.filter { it.contains("sherpa", ignoreCase = true) || it.contains("onnx", ignoreCase = true) || it.contains("Error", ignoreCase = false) }
+            .filterNot { it.contains("config:") }
+            .takeLast(25)
+            .joinToString("\n") { it.take(300) }
+    } catch (_: Throwable) {
+        ""
     }
 
     private fun buildConfig(voice: Voice, threads: Int): OfflineTtsConfig {
