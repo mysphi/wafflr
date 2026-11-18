@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wafflr</string>
+    <string name="read_aloud">Read with Wafflr</string>
+    <string name="probe_name">Wafflr selection probe</string>
+    <string name="probe_description">Test build: notes when you select text in other apps so we can see which apps report selections. Nothing leaves your phone, and nothing is read aloud by this switch.</string>
+</resources>
