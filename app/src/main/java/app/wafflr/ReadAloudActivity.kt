@@ -9,7 +9,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * "Read with Wafflr" in the text-selection menu of apps that support it (e.g. Chrome).
+ * "Read with Wafflr" in the text-selection menu of apps that support it (e.g. Chrome), and in
+ * the Share menu, which almost every app offers.
  * Shows a small panel with Pause and Stop; closing it keeps reading, and the floating button
  * keeps the controls.
  */
@@ -20,7 +21,9 @@ class ReadAloudActivity : Activity(), ReaderListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty().trim()
+        val shared = intent.action == Intent.ACTION_SEND
+        val text = (if (shared) intent.getCharSequenceExtra(Intent.EXTRA_TEXT) else intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
+            ?.toString().orEmpty().trim()
         val from = callingPackage ?: referrer?.host ?: "another app"
 
         val pad = (16 * resources.displayMetrics.density).toInt()
@@ -47,7 +50,7 @@ class ReadAloudActivity : Activity(), ReaderListener {
             return
         }
         val p = WafflrApp.instance.prefs
-        reader.read(text, p.voice, p.speed, p.threads, "selection in $from")
+        reader.read(text, p.voice, p.speed, p.threads, if (shared) "shared from $from" else "selection in $from")
     }
 
     override fun onStart() { super.onStart(); reader.addListener(this) }

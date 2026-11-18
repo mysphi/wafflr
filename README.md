@@ -10,8 +10,10 @@ Plan: see the project's development plan doc. Status: **Phase 1 (core reader)**.
 
 - **Floating button** (over every app): tap to read the screen, tap again to pause or resume,
   long-press to stop, drag to move. While reading, ⏮ and ⏭ go back or forward a sentence.
-- **Selected text**: choose *Read with Wafflr* in the selection menu, in apps that show it
-  (Chrome does; Gmail, BBC News and Adobe Acrobat did not in Phase 0 testing).
+- **Part of the screen**: select text and tap *Copy*, then tap the floating button within two
+  minutes; it reads the copied text instead of the whole screen.
+- **Share menu**: *Share → Read with Wafflr* works in most apps. Some apps (e.g. Chrome) also
+  show *Read with Wafflr* straight in the selection menu.
 - **Voices**: Piper Alan is built in; Piper Jenny and six Kokoro voices download once, then work
   offline. Pick the voice and speed in the app.
 

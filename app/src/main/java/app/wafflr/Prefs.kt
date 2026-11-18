@@ -30,6 +30,11 @@ class Prefs(context: Context) {
         get() = sp.getInt("bubble_y", -1)
         set(v) = sp.edit().putInt("bubble_y", v).apply()
 
+    /** Timestamp of the copied text Wafflr last read, so the same copy isn't read twice. */
+    var lastClipStamp: Long
+        get() = sp.getLong("last_clip", 0L)
+        set(v) = sp.edit().putLong("last_clip", v).apply()
+
     fun addResult(text: String) {
         // Keep the newest 30 entries.
         val kept = results.split("\n\n").filter { it.isNotBlank() }.take(29)

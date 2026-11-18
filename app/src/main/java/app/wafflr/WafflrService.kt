@@ -1,6 +1,7 @@
 package app.wafflr
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.content.SharedPreferences
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
@@ -25,11 +26,23 @@ class WafflrService : AccessibilityService() {
     private fun updateBubble() {
         if (app.prefs.bubbleEnabled) {
             if (bubble == null) {
-                bubble = FloatingBubble(this, app.prefs, app.reader) { readScreen() }.also { it.show() }
+                bubble = FloatingBubble(this, app.prefs, app.reader) { onBubbleTap() }.also { it.show() }
             }
         } else {
             bubble?.hide()
             bubble = null
+        }
+    }
+
+    /** Reads text you just copied, or else the whole screen. */
+    private fun onBubbleTap() {
+        try {
+            startActivity(
+                Intent(this, ClipboardReadActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            )
+        } catch (_: Throwable) {
+            readScreen() // couldn't check the clipboard; fall back
         }
     }
 
