@@ -17,6 +17,27 @@ class Prefs(context: Context) {
         get() = sp.getInt("threads", 4)
         set(v) = sp.edit().putInt("threads", v).apply()
 
+    var bubbleEnabled: Boolean
+        get() = sp.getBoolean("bubble", true)
+        set(v) = sp.edit().putBoolean("bubble", v).apply()
+
+    /** Which screen edge the floating button sits on, and how far down (pixels). */
+    var bubbleRight: Boolean
+        get() = sp.getBoolean("bubble_right", true)
+        set(v) = sp.edit().putBoolean("bubble_right", v).apply()
+
+    var bubbleY: Int
+        get() = sp.getInt("bubble_y", -1)
+        set(v) = sp.edit().putInt("bubble_y", v).apply()
+
+    fun addResult(text: String) {
+        // Keep the newest 30 entries.
+        val kept = results.split("\n\n").filter { it.isNotBlank() }.take(29)
+        results = (listOf(text) + kept).joinToString("\n\n")
+    }
+
+    val prefs get() = sp
+
     var results: String
         get() = sp.getString("results", "") ?: ""
         set(v) = sp.edit().putString("results", v).apply()

@@ -4,14 +4,20 @@ An offline "read this to me" app for Android, built as a reading aid for people 
 A floating button sits over any app; select text or draw around it and Wafflr reads it aloud with
 natural Kokoro or Piper voices, entirely on the phone. A Windows version is planned later.
 
-Plan: see the project's development plan doc. Status: **Phase 0 (feasibility spike)**.
+Plan: see the project's development plan doc. Status: **Phase 1 (core reader)**.
 
-## Phase 0: what this build tests
+## Using it
 
-1. **Voice speed.** How fast each voice starts talking on a Pixel 8 Pro, and whether it keeps up
-   with real time. Piper "Alan" is built in; Piper "Jenny" and the Kokoro voices download once.
-2. **Text selection.** Which apps tell an accessibility service what text you selected (needed for
-   a Wispr-style popup), and whether "Read aloud" appears in the text-selection menu.
+- **Floating button** (over every app): tap to read the screen, tap again to pause or resume,
+  long-press to stop, drag to move. While reading, ⏮ and ⏭ go back or forward a sentence.
+- **Selected text**: choose *Read with Wafflr* in the selection menu, in apps that show it
+  (Chrome does; Gmail, BBC News and Adobe Acrobat did not in Phase 0 testing).
+- **Voices**: Piper Alan is built in; Piper Jenny and six Kokoro voices download once, then work
+  offline. Pick the voice and speed in the app.
+
+Phase 0 findings: Piper starts speaking in about 0.3 s on a Nothing Phone 3a, Kokoro in about
+3 s. No app reports text selections to accessibility services, so there is no automatic popup on
+selection; the floating button is the main way in.
 
 ## Installing a test build
 
@@ -23,18 +29,18 @@ Every push builds an APK on GitHub Actions.
 
 The first install asks you to allow installs from your browser. Later builds install over the top.
 
-### Turning on the selection probe
+### Turning Wafflr on
 
 Android blocks accessibility switches for apps installed outside the Play Store until you allow it:
 
-1. Settings → Accessibility → Wafflr selection probe. If it is greyed out, continue:
+1. Settings → Accessibility → Wafflr. If it is greyed out, continue:
 2. Settings → Apps → Wafflr → ⋮ (top right) → **Allow restricted settings**.
 3. Go back and switch the probe on.
 
-### Running the tests
+### Reporting results
 
-In the app, follow sections 1 and 2, then tap **Copy results** and paste the report into the
-project chat.
+In the app, tap **Copy report** and paste it into the project chat. It lists timings for each
+read and any error or crash.
 
 ## Building locally
 

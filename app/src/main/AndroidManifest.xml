@@ -37,16 +37,16 @@
         </activity>
 
         <service
-            android:name=".SelectionProbeService"
+            android:name=".WafflrService"
             android:exported="false"
-            android:label="@string/probe_name"
+            android:label="@string/app_name"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
             <meta-data
                 android:name="android.accessibilityservice"
-                android:resource="@xml/selection_probe" />
+                android:resource="@xml/wafflr_service" />
         </service>
     </application>
 </manifest>
