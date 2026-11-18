@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+# Fetched by scripts/fetch-deps.sh (too large for git)
+app/libs/*.aar
+app/src/main/assets/voices/
