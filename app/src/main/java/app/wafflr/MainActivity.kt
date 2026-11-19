@@ -107,6 +107,22 @@ class MainActivity : WafflrScreen(), ReaderListener {
         })
         updateSpeedLabel()
 
+        // Pitch: 0.70 .. 1.30 in 0.05 steps.
+        root.addView(slider(
+            label = { "Pitch: " + when { it < 0.99f -> "lower (%.2f)".format(it); it > 1.01f -> "higher (%.2f)".format(it); else -> "normal" } },
+            min = 0.70f, step = 0.05f, steps = 12, value = prefs.pitch,
+        ) { prefs.pitch = it })
+        // Expression: 0.20 (flat, steady) .. 1.00 (lively) in 0.05 steps; Piper's default is 0.667.
+        root.addView(slider(
+            label = { "Expression: " + when { it < 0.55f -> "steadier"; it > 0.8f -> "livelier"; else -> "normal" } + " (%.2f)".format(it) },
+            min = 0.20f, step = 0.05f, steps = 16, value = prefs.expression,
+        ) { prefs.expression = it })
+        root.addView(button("Reset pitch and expression") {
+            prefs.pitch = 1.0f
+            prefs.expression = Tuning.DEFAULT_EXPRESSION
+            recreate()
+        })
+
         // --- Downloaded voices ------------------------------------------------------------------
         root.addView(heading("Downloaded voices"))
         root.addView(body("These work offline. Remove one to free up space. The last voice can't be removed."))
@@ -163,7 +179,7 @@ class MainActivity : WafflrScreen(), ReaderListener {
         when (reader.status.state) {
             ReaderState.PLAYING, ReaderState.PAUSED -> reader.togglePause()
             ReaderState.PREPARING -> {}
-            ReaderState.IDLE -> reader.read(input.text.toString(), prefs.voice, prefs.speed, prefs.threads, "Try it")
+            ReaderState.IDLE -> reader.read(input.text.toString(), prefs.voice, prefs.speed, prefs.threads, "Try it", prefs.tuning)
         }
     }
 
@@ -302,6 +318,27 @@ class MainActivity : WafflrScreen(), ReaderListener {
         addView(action, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
+
+    /** A labelled slider for a float setting: [steps] steps of [step] from [min]. */
+    private fun slider(label: (Float) -> String, min: Float, step: Float, steps: Int, value: Float, set: (Float) -> Unit) =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val text = body(label(value))
+            addView(text)
+            addView(SeekBar(this@MainActivity).apply {
+                max = steps
+                progress = Math.round((value - min) / step).coerceIn(0, steps)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                        val v = min + p * step
+                        if (fromUser) set(v)
+                        text.text = label(v)
+                    }
+                    override fun onStartTrackingTouch(s: SeekBar?) {}
+                    override fun onStopTrackingTouch(s: SeekBar?) {}
+                })
+            })
+        }
 
     private fun updateSpeedLabel() {
         speedLabel.text = "Speed: %.1f×".format(prefs.speed)

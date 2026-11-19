@@ -25,7 +25,7 @@ class ReadAloudActivity : Activity() {
         if (text.isEmpty()) {
             Toast.makeText(this, "Wafflr: no text was received.", Toast.LENGTH_SHORT).show()
         } else {
-            app.reader.read(text, p.voice, p.speed, p.threads, if (shared) "shared from $from" else "selection in $from")
+            app.reader.read(text, p.voice, p.speed, p.threads, if (shared) "shared from $from" else "selection in $from", p.tuning)
             if (WafflrService.instance == null || !p.bubbleEnabled) {
                 // No floating controls to pause or stop with: say how to get them.
                 Toast.makeText(this, "Reading. Turn on Wafflr's floating button in Settings to pause or stop.", Toast.LENGTH_LONG).show()
