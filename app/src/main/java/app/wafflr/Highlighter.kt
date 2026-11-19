@@ -58,6 +58,7 @@ class Highlighter(
     private var scrolledThisRead = false
     private var locating = false            // looking for the paragraph in a screenshot
     private var locateRetryAt = 0L
+    private var scrollSeq = 0               // counts page movements, so a screenshot taken before one is ignored
     private var predicted: Rect? = null     // where scrolling put the box, to compare with where the text really is
 
     private var wordKey = -1                // sentence index * 10000 + word index, for the current underline
@@ -124,12 +125,14 @@ class Highlighter(
     fun pageMoved(dx: Int = 0, dy: Int = 0, area: Rect? = null) {
         if (state == ReaderState.IDLE) return
         val s = spot ?: return
+        val now = SystemClock.uptimeMillis()
+        scrollSeq++
         if (s.spot.node == null) {
             lostForThisRead = true
+            followUntil = now + FOLLOW_MS // look for it again once the page settles
             hide()
             return
         }
-        val now = SystemClock.uptimeMillis()
         val known = (dx != 0 || dy != 0) && dx != -1 && dy != -1
         val b = box
         if (b != null && area != null && !Rect.intersects(area, b)) return // another part of the screen scrolled
@@ -172,49 +175,55 @@ class Highlighter(
                 unseen = 0
             }
         }
-        if (node == null && lostForThisRead) { hide(); return }
-
-        // Check the box against the app, except mid-scroll (apps report stale places then).
         val scrolling = t - lastScroll < SETTLE_MS
         if (scrolling && !trustScrolls) { hide(); return }
-        if (node != null && !scrolling && (needsCheck || t < followUntil || t - lastCheck > RECHECK_MS)) {
+        val settled = !scrolling && t >= followUntil
+
+        if (node == null) {
+            // Text read from a picture: once the page moves, find it again in a new screenshot.
+            if (lostForThisRead) {
+                box = null
+                if (settled) locate(s, null, now.sentence)
+            }
+        } else if (!scrolling && (needsCheck || t < followUntil || t - lastCheck > RECHECK_MS)) {
+            // Check the box against the app, except mid-scroll (apps report stale places then).
             needsCheck = false
             lastCheck = t
             var found = live?.let { check(it) }
-            if (found == null) {
+            if (found == null || found == OFF_SCREEN) {
                 // The app may have replaced the paragraph's node (web pages and lists do): find it again.
-                refind(node)?.let { n -> check(n)?.let { live = n; found = it } }
+                refind(node)?.let { n -> check(n)?.takeIf { it != OFF_SCREEN }?.let { live = n; found = it } }
             }
-            when (val f = found) {
-                null -> when {
-                    // The app won't say where the scrolled text went: hide the box (better none
-                    // than a wrong one) and look for the text in a screenshot instead.
-                    movedUnchecked || (box == null && scrolledThisRead) -> {
-                        if (movedUnchecked) predicted = box
-                        box = null
-                        movedUnchecked = false
-                        locate(s, node, now.sentence)
-                    }
-                    box == null -> box = Rect(s.spot.rect)
-                }
-                OFF_SCREEN -> if (++unseen >= 3) { box = null; hide(); return }
-                else -> {
-                    unseen = 0
-                    val b0 = box
-                    if (movedUnchecked && b0 != null &&
-                        (kotlin.math.abs(b0.top - f.top) > 24 * density || kotlin.math.abs(b0.left - f.left) > 24 * density)
-                    ) {
-                        trustScrolls = false // the app's scroll distances don't match its text
-                    }
+            val f = found?.takeIf { it != OFF_SCREEN }
+            if (f != null && movedUnchecked && box != null &&
+                (kotlin.math.abs(box!!.top - f.top) > 24 * density || kotlin.math.abs(box!!.left - f.left) > 24 * density)
+            ) {
+                trustScrolls = false // the app's scroll distances don't match where it says its text is
+            }
+            val afterScroll = movedUnchecked || (box == null && scrolledThisRead)
+            when {
+                // After a scroll in an app whose positions can't be trusted, or that won't say
+                // where its text went: hide the box (better none than a wrong one) and find the
+                // text in a screenshot instead.
+                afterScroll && (f == null || !trustScrolls) -> {
+                    if (movedUnchecked) predicted = box
+                    box = null
                     movedUnchecked = false
-                    val found = f
-                    if (found != box) {
+                    unseen = 0
+                    if (settled) locate(s, node, now.sentence) else needsCheck = true
+                }
+                f != null -> {
+                    unseen = 0
+                    movedUnchecked = false
+                    if (f != box) {
                         val old = box
-                        box = found
+                        box = f
                         wordKey = -1 // look the word up again at the new place
-                        if (old != null) shiftOcr(old, found)
+                        if (old != null) shiftOcr(old, f)
                     }
                 }
+                found == OFF_SCREEN -> if (++unseen >= 3) { box = null; if (scrolledThisRead) locate(s, node, now.sentence) }
+                box == null && !scrolledThisRead -> box = Rect(s.spot.rect)
             }
         }
         val b = box ?: run { hide(); return }
@@ -304,22 +313,22 @@ class Highlighter(
      * went after a scroll. The box goes around the paragraph's words that are visible, and the
      * words found are kept for the underline.
      */
-    private fun locate(s: SentenceSpot, node: AccessibilityNodeInfo, sentence: String) {
+    private fun locate(s: SentenceSpot, node: AccessibilityNodeInfo?, sentence: String) {
         val t = SystemClock.uptimeMillis()
         if (locating || t < locateRetryAt) return
         locating = true
-        val scrollAt = lastScroll
+        val scrollAt = scrollSeq
         val screen = try {
             wm.currentWindowMetrics.bounds
         } catch (_: Throwable) {
             Rect(0, 0, context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
         }
-        val text = node.text?.toString()?.takeIf { it.isNotBlank() } ?: sentence
+        val text = node?.text?.toString()?.takeIf { it.isNotBlank() } ?: sentence
         findWords(screen) { found ->
             main.post {
                 locating = false
                 // Gone stale: the paragraph changed, or the page moved again.
-                if (spot?.spot !== s.spot || lastScroll != scrollAt || state == ReaderState.IDLE) return@post
+                if (spot?.spot !== s.spot || scrollSeq != scrollAt || state == ReaderState.IDLE) return@post
                 val placed = found?.let { placeAmong(text, it) }
                 if (placed == null) {
                     locateRetryAt = SystemClock.uptimeMillis() + LOCATE_RETRY_MS
@@ -330,6 +339,8 @@ class Highlighter(
                     if (kotlin.math.abs(p.top - b.top) > 48 * density) trustScrolls = false
                 }
                 predicted = null
+                lostForThisRead = false
+                movedUnchecked = false
                 box = b
                 lastCheck = SystemClock.uptimeMillis()
                 ocrSpot = s
