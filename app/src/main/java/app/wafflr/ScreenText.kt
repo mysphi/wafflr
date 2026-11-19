@@ -10,6 +10,8 @@ class ScreenRead(
     /** Pieces of text skipped as menus, toolbars, buttons, tabs or navigation. */
     val skippedControls: Int,
     val skippedHeadings: Int,
+    /** Image labels, dates, bylines and similar small print. */
+    val skippedDetails: Int,
     /** True when everything looked like menus, so Wafflr read it all rather than nothing. */
     val fellBack: Boolean,
 ) {
@@ -18,6 +20,7 @@ class ScreenRead(
         val bits = mutableListOf<String>()
         if (skippedControls > 0) bits += "skipped $skippedControls menu/button items"
         if (skippedHeadings > 0) bits += "skipped $skippedHeadings headings"
+        if (skippedDetails > 0) bits += "skipped $skippedDetails images/dates/bylines"
         if (fellBack) bits += "nothing but menus found, read everything"
         if (bits.isNotEmpty()) append(" (").append(bits.joinToString(", ")).append(")")
     }
@@ -32,7 +35,8 @@ class ScreenRead(
  *    id (e.g. "toolbar", "bottom_nav") or, in Chrome and web views, their web role
  *    ("navigation", "banner", "menu", "toolbar", "contentinfo", ...);
  *  - short tappable labels such as "Home", "Reply" or "Share" (one to three words);
- *  - headings, unless the user turned "Read headings" on.
+ *  - headings, unless the user turned "Read headings" on;
+ *  - pictures' descriptions, then the small print [TextTidy] removes (dates, bylines, ...).
  *
  * If that leaves nothing at all, it reads everything instead, so the button never just fails.
  */
@@ -72,16 +76,17 @@ object ScreenText {
     private val headingWebRoles = setOf("heading")
 
     fun read(service: AccessibilityService, readHeadings: Boolean): ScreenRead {
-        val root = targetRoot(service) ?: return ScreenRead("", 0, 0, false)
+        val root = targetRoot(service) ?: return ScreenRead("", 0, 0, 0, false)
         val rootBounds = android.graphics.Rect().also { root.getBoundsInScreen(it) }
         val filtered = Collector(filter = true, readHeadings = readHeadings, pageHeight = rootBounds.height())
             .also { it.collect(root, 0, null) }
-        val text = join(filtered.parts)
+        val tidied = TextTidy.tidy(filtered.parts)
+        val text = join(tidied.lines)
         if (text.isNotBlank()) {
-            return ScreenRead(text, filtered.skippedControls, filtered.skippedHeadings, false)
+            return ScreenRead(text, filtered.skippedControls, filtered.skippedHeadings, filtered.skippedImages + tidied.skipped, false)
         }
         val everything = Collector(filter = false, readHeadings = true, pageHeight = rootBounds.height()).also { it.collect(root, 0, null) }
-        return ScreenRead(join(everything.parts), 0, 0, everything.parts.isNotEmpty())
+        return ScreenRead(join(everything.parts), 0, 0, 0, everything.parts.isNotEmpty())
     }
 
     /** Drops exact repeats (e.g. a title shown twice) while keeping order. */
@@ -108,6 +113,7 @@ object ScreenText {
         val parts = mutableListOf<String>()
         var skippedControls = 0
         var skippedHeadings = 0
+        var skippedImages = 0
 
         /** [parentText]: nearest ancestor's text, so links inside a paragraph aren't read twice. */
         fun collect(node: AccessibilityNodeInfo, depth: Int, parentText: String?) {
@@ -123,6 +129,7 @@ object ScreenText {
                 val repeat = parentText != null && parentText.contains(text)
                 when {
                     repeat -> {}
+                    filter && isImage(node) -> skippedImages++
                     filter && !readHeadings && isHeading(node) -> skippedHeadings++
                     filter && isShortTapLabel(node, text) -> skippedControls++
                     else -> parts += text
@@ -162,6 +169,13 @@ object ScreenText {
             }
         }
         return false
+    }
+
+    /** Pictures: their "text" is a description (alt text), not part of what you're reading. */
+    private fun isImage(node: AccessibilityNodeInfo): Boolean {
+        val cls = node.className?.toString() ?: ""
+        if (cls == "android.widget.Image" || cls == "android.widget.ImageView") return true
+        return webRole(node) in setOf("image", "img", "graphics-document", "graphics-symbol", "figure-caption-source")
     }
 
     private fun isHeading(node: AccessibilityNodeInfo): Boolean =
