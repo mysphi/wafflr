@@ -49,21 +49,21 @@ object VoiceCatalog {
         VoicePack("piper-$id", EngineKind.PIPER, "vits-piper-$name", bundled = false, sizeNote = "about 65 MB download")
 
     val voices = listOf(
-        Voice("piper-alan", "Alan (British male)", piperAlan),
-        Voice("piper-jenny", "Jenny (British female)", piperJenny),
-        Voice("piper-alba", "Alba (Scottish female)", piperAlba),
-        Voice("piper-cori", "Cori (British female)", piperCori),
-        Voice("piper-northern-male", "Northern English male", piperNorthern),
-        Voice("piper-southern-female", "Southern English female (lighter quality)", piperSouthern),
-        Voice("piper-amy", "Amy (American female)", piperAmy),
-        Voice("piper-kristin", "Kristin (American female)", piperKristin),
-        Voice("piper-ryan", "Ryan (American male)", piperRyan),
-        Voice("piper-joe", "Joe (American male)", piperJoe),
+        Voice("piper-alan", "Alan (Southern English Male)", piperAlan),
+        Voice("piper-jenny", "Jenny (Irish Female)", piperJenny),
+        Voice("piper-alba", "Alba (Scottish Female)", piperAlba),
+        Voice("piper-cori", "Cori (English Female)", piperCori),
+        Voice("piper-northern-male", "Geoff (Northern English Male)", piperNorthern),
+        Voice("piper-southern-female", "Karen (Southern English Female)", piperSouthern),
+        Voice("piper-amy", "Amy (American Female)", piperAmy),
+        Voice("piper-kristin", "Kristin (American Female)", piperKristin),
+        Voice("piper-ryan", "Ryan (American Male)", piperRyan),
+        Voice("piper-joe", "Joe (American Male)", piperJoe),
     )
 
     val default: Voice = voices.first()
 
-    /** Name for a pack in the list of downloaded voices, e.g. "Alan (British male)". */
+    /** Name for a pack in the list of downloaded voices, e.g. "Alan (Southern English Male)". */
     fun title(pack: VoicePack): String = voices.filter { it.pack == pack }.joinToString(", ") { it.label }
 
     /** Old pack folders that are no longer offered (the Kokoro voices), safe to remove. */

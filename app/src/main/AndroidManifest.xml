@@ -21,6 +21,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Wafflr settings"
+            android:parentActivityName=".MainActivity" />
+
         <!-- "Read aloud" entry in the text-selection menu of other apps -->
         <activity
             android:name=".ReadAloudActivity"

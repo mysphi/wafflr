@@ -22,12 +22,9 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 
-/** Set-up and settings screen, plus a place to try voices. */
-class MainActivity : Activity(), ReaderListener {
-    private lateinit var prefs: Prefs
-    private lateinit var serviceStatus: TextView
-    private lateinit var shortcutWarning: LinearLayout
-    private lateinit var bubbleSwitch: Switch
+/** Main screen: how to use Wafflr, voices, and a place to try them. Set-up lives in [SettingsActivity]. */
+class MainActivity : WafflrScreen(), ReaderListener {
+    private lateinit var offWarning: LinearLayout
     private lateinit var voiceSpinner: Spinner
     private lateinit var installedList: LinearLayout
     private lateinit var availableList: LinearLayout
@@ -39,57 +36,33 @@ class MainActivity : Activity(), ReaderListener {
     private lateinit var speedLabel: TextView
     private lateinit var status: TextView
     private lateinit var playButton: Button
-    private lateinit var results: TextView
-    private lateinit var crash: TextView
-    private val app get() = WafflrApp.instance
     private val reader get() = app.reader
-    private val dp get() = resources.displayMetrics.density
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = app.prefs
         val pad = (16 * dp).toInt()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad * 3)
         }
 
-        root.addView(heading("Wafflr"))
-        root.addView(body("Reads the text on your screen aloud, offline."))
-        crash = mono("")
-        root.addView(crash)
-
-        // --- Set-up ---------------------------------------------------------------------------
-        root.addView(heading("Turn on Wafflr"))
-        serviceStatus = body("")
-        root.addView(serviceStatus)
-        root.addView(body(
-            "Wafflr needs its Accessibility switch to float over other apps and read the screen. " +
-            "If the switch is greyed out: Settings → Apps → Wafflr → ⋮ → Allow restricted settings, then try again."
-        ))
-        root.addView(button("Open Accessibility settings") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            addView(heading("Wafflr"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(button("Settings") { openSettings() })
         })
-        bubbleSwitch = Switch(this).apply {
-            text = "Show the floating button"
-            textSize = 16f
-            isChecked = prefs.bubbleEnabled
-            setOnCheckedChangeListener { _, on -> prefs.bubbleEnabled = on }
-            setPadding(0, (12 * dp).toInt(), 0, (12 * dp).toInt())
-        }
-        root.addView(bubbleSwitch)
-        shortcutWarning = LinearLayout(this).apply {
+        root.addView(body("Reads the text on your screen aloud, offline."))
+
+        // Shown only while the accessibility switch is off.
+        offWarning = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(body(
-                "⚠ Android's own accessibility shortcut is also on for Wafflr. That is the small Wafflr icon " +
-                "in a grey tab at the edge of the screen. Wafflr doesn't need it, and it gets in the way of the " +
-                "floating controls. To remove it: Accessibility settings → Wafflr → turn off \"Wafflr shortcut\"."
-            ))
-            addView(button("Turn off the extra shortcut") {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            })
+            addView(body("⚠ Wafflr is off, so the floating controls won't appear. Turn it on in Settings."))
+            addView(button("Open Settings") { openSettings() })
         }
-        root.addView(shortcutWarning)
+        root.addView(offWarning)
+
+        root.addView(heading("Using Wafflr"))
         root.addView(body(
             "Floating controls: tap the Wafflr logo to open them; drag it to move; long-press it to open this app. " +
             "The speaker reads the whole screen, and becomes pause/resume while reading. " +
@@ -147,49 +120,18 @@ class MainActivity : Activity(), ReaderListener {
         status = body("")
         root.addView(status)
 
-        // --- Test report ----------------------------------------------------------------------
-        root.addView(heading("Test report"))
-        results = mono("")
-        root.addView(results)
-        root.addView(row(
-            button("Copy report") { copyReport() },
-            button("Clear") { prefs.results = ""; refreshResults() },
-        ))
-        root.addView(body("Advanced: CPU threads used for speech"))
-        val threadOptions = listOf(1, 2, 4, 6)
-        root.addView(Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, threadOptions.map { "$it threads" })
-            setSelection(threadOptions.indexOf(prefs.threads).coerceAtLeast(0))
-            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { prefs.threads = threadOptions[pos] }
-                override fun onNothingSelected(p: AdapterView<*>?) {}
-            }
-        })
-
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
-    /** True if Android's floating accessibility button is set to launch Wafflr. */
-    private fun systemShortcutOn(): Boolean = try {
-        val targets = Settings.Secure.getString(contentResolver, "accessibility_button_targets").orEmpty()
-        targets.contains(packageName)
-    } catch (_: Throwable) {
-        false
-    }
 
     override fun onResume() {
         super.onResume()
         reader.addListener(this)
-        val on = isServiceEnabled()
-        serviceStatus.text = if (on) "✓ Wafflr is on" else "✗ Wafflr is off. Turn it on in Accessibility settings (look for Wafflr)."
-        bubbleSwitch.isEnabled = on
-        shortcutWarning.visibility = if (systemShortcutOn()) View.VISIBLE else View.GONE
+        offWarning.visibility = if (isServiceEnabled()) View.GONE else View.VISIBLE
         refreshPack()
-        refreshResults()
-        val lastCrash = CrashReport.lastCrash(this)
-        crash.text = if (lastCrash.isEmpty()) "" else "Last time the app closed unexpectedly:\n$lastCrash\n(Included in the test report.)"
-        crash.visibility = if (lastCrash.isEmpty()) View.GONE else View.VISIBLE
     }
+
+    private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
 
     override fun onPause() {
         reader.removeListener(this)
@@ -219,13 +161,11 @@ class MainActivity : Activity(), ReaderListener {
     }
 
     override fun onFinished(result: SpeechResult) {
-        refreshResults()
         refreshPack()
     }
 
     override fun onError(message: String) {
         status.text = "Error: $message"
-        refreshResults()
         refreshPack()
     }
 
@@ -341,65 +281,12 @@ class MainActivity : Activity(), ReaderListener {
         addView(action, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
-    private fun refreshResults() {
-        results.text = prefs.results.ifEmpty { "Nothing read yet." }
-    }
 
     private fun updateSpeedLabel() {
         speedLabel.text = "Speed: %.1f×".format(prefs.speed)
     }
 
-    private fun copyReport() {
-        val report = buildString {
-            append("Wafflr test report\n")
-            append(Models.deviceLine()).append("\n")
-            append("App version ").append(packageManager.getPackageInfo(packageName, 0).versionName).append("\n")
-            append("Accessibility service: ").append(if (isServiceEnabled()) "on" else "off").append("\n\n")
-            append(prefs.results.ifEmpty { "Nothing read yet." }).append("\n")
-            val lastCrash = CrashReport.lastCrash(this@MainActivity)
-            if (lastCrash.isNotEmpty()) append("\nLAST CRASH\n").append(lastCrash).append("\n")
-        }
-        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Wafflr report", report))
-        Toast.makeText(this, "Copied. Paste it into the chat.", Toast.LENGTH_SHORT).show()
-    }
 
-    private fun isServiceEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-        val me = ComponentName(this, WafflrService::class.java).flattenToString()
-        return enabled.split(':').any { it.equals(me, ignoreCase = true) }
-    }
-
-    // --- tiny view helpers ------------------------------------------------------------------
-    private fun heading(t: String) = TextView(this).apply {
-        text = t
-        textSize = 20f
-        setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, (20 * dp).toInt(), 0, (8 * dp).toInt())
-    }
-
-    private fun body(t: String) = TextView(this).apply {
-        text = t
-        textSize = 15f
-        setPadding(0, (4 * dp).toInt(), 0, (4 * dp).toInt())
-    }
-
-    private fun mono(t: String) = TextView(this).apply {
-        text = t
-        textSize = 12f
-        typeface = Typeface.MONOSPACE
-        setTextIsSelectable(true)
-        setPadding(0, (4 * dp).toInt(), 0, (4 * dp).toInt())
-    }
-
-    private fun button(t: String, onClick: () -> Unit) = Button(this).apply {
-        text = t
-        setOnClickListener { onClick() }
-    }
-
-    private fun row(vararg views: View) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        views.forEach { addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)) }
-    }
 
     companion object {
         const val SAMPLE =
