@@ -14,5 +14,15 @@ class Spot(val rect: Rect, val node: AccessibilityNodeInfo? = null, val textStar
 /** A sentence's place: the piece it came from, and where it starts in the node's text (-1 unknown). */
 class SentenceSpot(val spot: Spot, val charStart: Int)
 
-/** What is being heard right now: which sentence, and how far through it (0..1). */
-class NowPlaying(val index: Int, val fraction: Float, val sentence: String, val spot: SentenceSpot?)
+/**
+ * What is being heard right now: which sentence, how far through it (0..1), the audio frame
+ * within it, and the word timings worked out from its audio (if any).
+ */
+class NowPlaying(
+    val index: Int,
+    val fraction: Float,
+    val sentence: String,
+    val spot: SentenceSpot?,
+    val frame: Int = 0,
+    val plan: WordTimer.Plan? = null,
+)

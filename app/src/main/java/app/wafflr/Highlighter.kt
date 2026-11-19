@@ -10,6 +10,7 @@ import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
@@ -20,8 +21,11 @@ import android.view.accessibility.AccessibilityNodeInfo
  *  - a soft yellow box around the paragraph (or drawn area) being read. Text that came from the
  *    app itself is looked up again when the page scrolls, so the box moves with it;
  *  - a subtle underline under the word being spoken, where the app can say where its words are
- *    (most apps and web pages can). Word timing is estimated from each word's length, since the
- *    voices don't report it.
+ *    (most apps and web pages can). The voices don't report word timings, so [WordTimer] works
+ *    them out from each sentence's audio (its pauses and each word's syllables).
+ *
+ * While the page scrolls, the box is moved by the scroll distance straight away and then checked
+ * against the app every frame until scrolling settles, so it keeps up with the text.
  *
  * Text read from a picture of the screen can't be followed: its box hides once the page moves.
  */
@@ -43,6 +47,7 @@ class Highlighter(
     private var boxStale = true
     private var word: IntRange? = null
     private var wordRects: List<RectF> = emptyList()
+    private var followUntil = 0L // keep re-checking positions every frame until then (after a scroll)
 
     private val params = WindowManager.LayoutParams(
         WindowManager.LayoutParams.MATCH_PARENT,
@@ -56,7 +61,13 @@ class Highlighter(
     private val ticker = object : Runnable {
         override fun run() {
             tick()
-            if (state != ReaderState.IDLE) main.postDelayed(this, if (state == ReaderState.PLAYING) 70 else 250)
+            if (state == ReaderState.IDLE) return
+            val delay = when {
+                SystemClock.uptimeMillis() < followUntil -> FRAME_MS
+                state == ReaderState.PLAYING -> 70L
+                else -> 250L
+            }
+            main.postDelayed(this, delay)
         }
     }
 
@@ -75,14 +86,31 @@ class Highlighter(
         }
     }
 
-    /** The page scrolled or changed: look the text up again (or give up, for picture text). */
-    fun pageMoved() {
+    /**
+     * The page scrolled (by [dx], [dy] pixels, if the app says) or changed. The box moves by the
+     * scroll straight away, then is looked up again every frame until scrolling stops. Text read
+     * from a picture can't be looked up, so its box is hidden.
+     */
+    fun pageMoved(dx: Int = 0, dy: Int = 0) {
         if (state == ReaderState.IDLE) return
         if (spot?.spot?.node == null) {
             lostForThisRead = true
             hide()
-        } else {
-            boxStale = true
+            return
+        }
+        boxStale = true
+        if ((dx != 0 || dy != 0) && dx != -1 && dy != -1 && added) {
+            box?.let { b ->
+                box = Rect(b).apply { offset(-dx, -dy) }
+                wordRects = wordRects.map { RectF(it).apply { offset(-dx.toFloat(), -dy.toFloat()) } }
+                show(box!!, wordRects)
+            }
+        }
+        val wasFollowing = SystemClock.uptimeMillis() < followUntil
+        followUntil = SystemClock.uptimeMillis() + FOLLOW_MS
+        if (!wasFollowing) {
+            main.removeCallbacks(ticker)
+            main.post(ticker)
         }
     }
 
@@ -99,6 +127,7 @@ class Highlighter(
         if (node == null && lostForThisRead) { hide(); return }
 
         var moved = false
+        if (SystemClock.uptimeMillis() < followUntil) boxStale = true
         if (boxStale) {
             boxStale = false
             box = if (node == null) s.spot.rect else currentBounds(node)
@@ -108,7 +137,7 @@ class Highlighter(
 
         // The word being spoken, located in the app's text.
         if (prefs.underlineWords && node != null && s.charStart >= 0) {
-            val w = wordAt(now.sentence, now.fraction)
+            val w = now.plan?.wordAt(now.frame) ?: wordAt(now.sentence, now.fraction)
             if (w != word || moved) {
                 word = w
                 wordRects = if (w == null) emptyList() else charRects(node, s.charStart + w.first, w.last - w.first + 1)
@@ -195,11 +224,13 @@ class Highlighter(
     }
 
     companion object {
+        private const val FRAME_MS = 16L
+        private const val FOLLOW_MS = 500L
         private val WORD = Regex("\\S+")
 
         /**
-         * Which word of [sentence] is being spoken when [fraction] of its audio has played.
-         * Longer words take longer to say, and punctuation adds a pause.
+         * A fallback guess, used until a sentence's word timings are ready: which word of
+         * [sentence] is being spoken when [fraction] of its audio has played.
          */
         fun wordAt(sentence: String, fraction: Float): IntRange? {
             val words = WORD.findAll(sentence).toList()

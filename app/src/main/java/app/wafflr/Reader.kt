@@ -196,8 +196,10 @@ class Reader(private val context: Context, private val models: Models) {
             val seg = synchronized(segments) {
                 segments.lastOrNull { head >= it.start } ?: return null
             }
-            val fraction = ((head - seg.start).toFloat() / seg.length).coerceIn(0f, 1f)
-            return NowPlaying(seg.index, fraction, sentences[seg.index], regions?.getOrNull(seg.index))
+            val frame = (head - seg.start).toInt().coerceIn(0, seg.length)
+            val fraction = frame.toFloat() / seg.length.coerceAtLeast(1)
+            val plan = synchronized(lock) { plans[seg.index] }
+            return NowPlaying(seg.index, fraction, sentences[seg.index], regions?.getOrNull(seg.index), frame, plan)
         }
 
         private val lock = Object()
@@ -208,6 +210,8 @@ class Reader(private val context: Context, private val models: Models) {
         private var stopped = false
         private var pausedByFocus = false
         private val cache = HashMap<Int, FloatArray>()
+        /** When each word is spoken, worked out from each sentence's audio (for the underline). */
+        private val plans = HashMap<Int, WordTimer.Plan>()
         private var genError: Throwable? = null
         @Volatile private var track: AudioTrack? = null
         private var focusRequest: AudioFocusRequest? = null
@@ -372,14 +376,19 @@ class Reader(private val context: Context, private val models: Models) {
                             lock.wait()
                         }
                         cache.keys.removeAll { it < cur - 2 }
+                        plans.keys.removeAll { it < cur - 2 }
                     }
                     val t0 = SystemClock.elapsedRealtime()
                     val audio = PitchShift.apply(
                         models.generate(model, sentences[target], voice.sid, speed), model.sampleRate, tuning.pitch,
                     )
                     val took = SystemClock.elapsedRealtime() - t0
+                    val plan = if (regions != null) {
+                        try { WordTimer.plan(sentences[target], audio, model.sampleRate) } catch (_: Throwable) { null }
+                    } else null
                     synchronized(lock) {
                         cache[target] = audio
+                        if (plan != null) plans[target] = plan
                         if (counted.add(target)) {
                             synthMs += took
                             audioSamples += audio.size

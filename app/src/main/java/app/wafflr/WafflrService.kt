@@ -136,7 +136,8 @@ class WafflrService : AccessibilityService() {
         // The page scrolled or changed under the highlight: it would point at the wrong text.
         if (event.packageName?.toString() == packageName) return
         when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SCROLLED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> highlighter?.pageMoved()
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> highlighter?.pageMoved(event.scrollDeltaX, event.scrollDeltaY)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> highlighter?.pageMoved()
         }
     }
 
