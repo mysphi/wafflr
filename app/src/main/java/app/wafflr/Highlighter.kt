@@ -56,6 +56,9 @@ class Highlighter(
     private var trustScrolls = true         // the app's scroll distances match where its text ends up
     private var movedUnchecked = false      // the box was moved by scrolls and not yet checked
     private var scrolledThisRead = false
+    private var locating = false            // looking for the paragraph in a screenshot
+    private var locateRetryAt = 0L
+    private var predicted: Rect? = null     // where scrolling put the box, to compare with where the text really is
 
     private var wordKey = -1                // sentence index * 10000 + word index, for the current underline
     private var wordRects: List<RectF> = emptyList()
@@ -184,9 +187,15 @@ class Highlighter(
             }
             when (val f = found) {
                 null -> when {
-                    // Can't confirm where the scrolled text went: better no box than a wrong one.
-                    movedUnchecked -> { box = null; movedUnchecked = false }
-                    box == null && !scrolledThisRead -> box = Rect(s.spot.rect)
+                    // The app won't say where the scrolled text went: hide the box (better none
+                    // than a wrong one) and look for the text in a screenshot instead.
+                    movedUnchecked || (box == null && scrolledThisRead) -> {
+                        if (movedUnchecked) predicted = box
+                        box = null
+                        movedUnchecked = false
+                        locate(s, node, now.sentence)
+                    }
+                    box == null -> box = Rect(s.spot.rect)
                 }
                 OFF_SCREEN -> if (++unseen >= 3) { box = null; hide(); return }
                 else -> {
@@ -290,14 +299,73 @@ class Highlighter(
         }
     }
 
+    /**
+     * Finds the paragraph on screen from a screenshot, for apps that won't say where their text
+     * went after a scroll. The box goes around the paragraph's words that are visible, and the
+     * words found are kept for the underline.
+     */
+    private fun locate(s: SentenceSpot, node: AccessibilityNodeInfo, sentence: String) {
+        val t = SystemClock.uptimeMillis()
+        if (locating || t < locateRetryAt) return
+        locating = true
+        val scrollAt = lastScroll
+        val screen = try {
+            wm.currentWindowMetrics.bounds
+        } catch (_: Throwable) {
+            Rect(0, 0, context.resources.displayMetrics.widthPixels, context.resources.displayMetrics.heightPixels)
+        }
+        val text = node.text?.toString()?.takeIf { it.isNotBlank() } ?: sentence
+        findWords(screen) { found ->
+            main.post {
+                locating = false
+                // Gone stale: the paragraph changed, or the page moved again.
+                if (spot?.spot !== s.spot || lastScroll != scrollAt || state == ReaderState.IDLE) return@post
+                val placed = found?.let { placeAmong(text, it) }
+                if (placed == null) {
+                    locateRetryAt = SystemClock.uptimeMillis() + LOCATE_RETRY_MS
+                    return@post
+                }
+                val (b, inside) = placed
+                predicted?.let { p ->
+                    if (kotlin.math.abs(p.top - b.top) > 48 * density) trustScrolls = false
+                }
+                predicted = null
+                box = b
+                lastCheck = SystemClock.uptimeMillis()
+                ocrSpot = s
+                ocrBox = b
+                ocrWords = inside.map { (w, r) -> w to RectF(r).apply { offset(-b.left.toFloat(), -b.top.toFloat()) } }
+                ocrState = OCR_DONE
+                alignedFor = -1
+                charsUnsupported = true // the app's own word places are stale too
+                wordKey = -1
+                main.removeCallbacks(ticker)
+                main.post(ticker)
+            }
+        }
+    }
+
+    /** The box around [text]'s words among the screen's [words], and the screen words inside it. */
+    private fun placeAmong(text: String, words: List<Pair<String, Rect>>): Pair<Rect, List<Pair<String, Rect>>>? {
+        val mine = WORD.findAll(text).map { it.value }.toList()
+        val map = align(mine, words.map { it.first })
+        val hits = map.filter { it >= 0 }
+        if (hits.size < minOf(3, mine.size)) return null
+        val box = Rect(words[hits.first()].second)
+        for (j in hits.first()..hits.last()) box.union(words[j].second)
+        val inside = (hits.first()..hits.last()).map { words[it] }
+        return box to inside
+    }
+
     /** Looks for the paragraph's text again in the window, nearest to where the box was. */
     private fun refind(old: AccessibilityNodeInfo): AccessibilityNodeInfo? = try {
         val text = old.text?.toString()
         val root = (context as? android.accessibilityservice.AccessibilityService)?.rootInActiveWindow
         if (text.isNullOrBlank() || root == null) null else {
             val near = box ?: spot?.spot?.rect
-            root.findAccessibilityNodeInfosByText(text.trim().take(60))
-                .filter { it.text?.toString() == text && it.isVisibleToUser }
+            val want = text.replace(Regex("\\s+"), " ").trim()
+            root.findAccessibilityNodeInfosByText(want.take(40))
+                .filter { it.isVisibleToUser && it.text?.toString()?.replace(Regex("\\s+"), " ")?.trim() == want }
                 .minByOrNull { n ->
                     val r = Rect().also { n.getBoundsInScreen(it) }
                     if (near == null) 0 else kotlin.math.abs(r.top - near.top) + kotlin.math.abs(r.left - near.left)
@@ -398,6 +466,7 @@ class Highlighter(
         private const val FOLLOW_MS = 500L
         private const val SETTLE_MS = 250L
         private const val RECHECK_MS = 1000L
+        private const val LOCATE_RETRY_MS = 1500L
         private const val OCR_NONE = 0
         private const val OCR_PENDING = 1
         private const val OCR_DONE = 2
@@ -440,13 +509,15 @@ class Highlighter(
             val b = screen.map(::norm)
             var best = IntArray(a.size) { -1 }
             var bestCount = 0
-            val firsts = a.indices.take(3).filter { a[it].isNotEmpty() }
-            for (j0 in b.indices) {
-                if (firsts.none { same(a[it], b[j0]) }) continue
+            // Any word can start the match (the paragraph's start may be scrolled out of view),
+            // but short words are too common to start one, unless they open the sentence.
+            val anchors = a.indices.filter { a[it].length >= 3 || (it < 3 && a[it].isNotEmpty()) }
+            for (j0 in b.indices) for (i0 in anchors) {
+                if (!same(a[i0], b[j0])) continue
                 val map = IntArray(a.size) { -1 }
                 var j = j0
                 var count = 0
-                for (i in a.indices) {
+                for (i in i0 until a.size) {
                     if (a[i].isEmpty()) continue
                     val hit = (j until minOf(b.size, j + 6)).firstOrNull { same(a[i], b[it]) }
                     if (hit != null) { map[i] = hit; j = hit + 1; count++ }
