@@ -27,14 +27,16 @@
             android:label="Wafflr settings"
             android:parentActivityName=".MainActivity" />
 
-        <!-- "Read aloud" entry in the text-selection menu of other apps -->
+        <!-- "Read with Wafflr" in other apps' selection and Share menus: invisible, it just
+             starts reading and the floating controls take over. -->
         <activity
             android:name=".ReadAloudActivity"
             android:exported="true"
             android:excludeFromRecents="true"
             android:label="@string/read_aloud"
+            android:noHistory="true"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
