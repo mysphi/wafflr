@@ -46,11 +46,19 @@ class MainActivity : WafflrScreen(), ReaderListener {
             setPadding(pad, pad, pad, pad * 3)
         }
 
+        // Title with a settings cog on the right. (The top bar gets a cog too, when there is one.)
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(heading("Wafflr"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(button("Settings") { openSettings() })
+            if (actionBar == null) {
+                addView(android.widget.ImageButton(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_settings)
+                    background = null
+                    contentDescription = "Settings"
+                    setOnClickListener { openSettings() }
+                }, LinearLayout.LayoutParams((48 * dp).toInt(), (48 * dp).toInt()))
+            }
         })
         root.addView(body("Reads the text on your screen aloud, offline."))
 
@@ -132,6 +140,19 @@ class MainActivity : WafflrScreen(), ReaderListener {
     }
 
     private fun openSettings() = startActivity(Intent(this, SettingsActivity::class.java))
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menu.add(0, MENU_SETTINGS, 0, "Settings").apply {
+            setIcon(R.drawable.ic_settings)
+            setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS)
+        }
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        if (item.itemId == MENU_SETTINGS) { openSettings(); return true }
+        return super.onOptionsItemSelected(item)
+    }
 
     override fun onPause() {
         reader.removeListener(this)
@@ -289,6 +310,7 @@ class MainActivity : WafflrScreen(), ReaderListener {
 
 
     companion object {
+        private const val MENU_SETTINGS = 1
         const val SAMPLE =
             "The morning train was late again, so Sarah decided to walk. It was only two miles, " +
             "and the rain had finally stopped. Along the way, she noticed things she'd never seen " +
