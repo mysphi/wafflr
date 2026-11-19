@@ -189,10 +189,29 @@ class Reader(private val context: Context, private val models: Models) {
         /** The track was flushed: its play position starts again from zero. */
         private fun resetTimeline() = synchronized(segments) { segments.clear(); written = 0 }
 
+        private val stamp = android.media.AudioTimestamp()
+
+        /**
+         * The frame reaching the speaker now. The play position counts frames handed to the
+         * audio system, which can be a good fraction of a second ahead of what's heard (more on
+         * Bluetooth), so the track's timestamp, which says when a frame actually plays, is used
+         * where it's available.
+         */
+        private fun heardPosition(t: AudioTrack): Long {
+            val head = t.playbackHeadPosition.toLong() and 0xffffffffL
+            if (!t.getTimestamp(stamp)) return head
+            val now = System.nanoTime()
+            val age = now - stamp.nanoTime
+            if (age < 0 || age > 2_000_000_000L) return head
+            val playing = t.playState == AudioTrack.PLAYSTATE_PLAYING
+            val est = stamp.framePosition + if (playing) age * t.sampleRate / 1_000_000_000L else 0L
+            return est.coerceIn(0L, head)
+        }
+
         /** The sentence being heard and how far through it, from the speaker's play position. */
         fun nowPlaying(): NowPlaying? {
             val t = track ?: return null
-            val head = try { t.playbackHeadPosition.toLong() and 0xffffffffL } catch (_: Throwable) { return null }
+            val head = try { heardPosition(t) } catch (_: Throwable) { return null }
             val seg = synchronized(segments) {
                 segments.lastOrNull { head >= it.start } ?: return null
             }

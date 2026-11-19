@@ -75,32 +75,76 @@ object WordTimer {
         }
         val breaks = clauses.size - 1
 
-        // Use the longest pauses as clause boundaries, if there are enough of them.
-        val anchors: List<IntRange> = if (breaks > 0 && pauses.size >= breaks) {
-            pauses.sortedByDescending { it.last - it.first }.take(breaks).sortedBy { it.first }
-        } else emptyList()
+        // Match pauses to the punctuation breaks. Each break's expected time comes from the
+        // syllables before it; a pause close to where a break should be, and long, is a good
+        // match. A voice can run through a comma without pausing, and gaps inside words (the
+        // closure before a "t" or "k") can look like short pauses, so a break may also go
+        // unmatched, and position counts as much as length.
+        val clauseWeight = clauses.map { c -> c.sumOf { syllables(matches[it].value).toDouble() } }
+        val totalWeight = clauseWeight.sum().coerceAtLeast(0.001)
+        val span = (last + 1 - first).toDouble()
+        val expected = DoubleArray(breaks) { k ->
+            first + span * clauseWeight.take(k + 1).sum() / totalWeight
+        }
+        val chosen = IntArray(breaks) { -1 } // pause index for each break, or -1
+        if (breaks > 0 && pauses.isNotEmpty()) {
+            val pCount = pauses.size
+            fun cost(k: Int, j: Int): Double {
+                val p = pauses[j]
+                val centre = (p.first + p.last + 1) / 2.0
+                val off = kotlin.math.abs(centre - expected[k]) / span
+                val len = minOf((p.last - p.first + 1) * WINDOW_MS, 400) / 400.0
+                return off * 3.0 - len - 0.1 // below zero: worth matching
+            }
+            val skip = 0.0 // a break with no pause
+            // f[k][j]: best cost placing the first k breaks using only the first j pauses.
+            val f = Array(breaks + 1) { DoubleArray(pCount + 1) }
+            val how = Array(breaks + 1) { IntArray(pCount + 1) } // 0 skip pause, 1 skip break, 2 match
+            for (k in 1..breaks) { f[k][0] = f[k - 1][0] + skip; how[k][0] = 1 }
+            for (k in 0..breaks) for (j in 1..pCount) {
+                var best = f[k][j - 1]; var h = 0
+                if (k > 0) {
+                    val unmatched = f[k - 1][j] + skip
+                    if (unmatched < best) { best = unmatched; h = 1 }
+                    val match = f[k - 1][j - 1] + cost(k - 1, j - 1)
+                    if (match < best) { best = match; h = 2 }
+                }
+                f[k][j] = best; how[k][j] = h
+            }
+            var k = breaks; var j = pCount
+            while (k > 0) {
+                when (how[k][j]) {
+                    0 -> j--
+                    1 -> k--
+                    else -> { chosen[k - 1] = j - 1; k--; j-- }
+                }
+            }
+        }
 
         val starts = IntArray(words.size)
-        fun spread(clause: List<Int>, fromWin: Int, toWin: Int) {
-            val weights = clause.map { syllables(matches[it].value) }
+        fun spread(group: List<Int>, fromWin: Int, toWin: Int) {
+            val weights = group.map { syllables(matches[it].value) }
             val total = weights.sum().coerceAtLeast(0.001f)
             var t = fromWin.toFloat()
-            val span = (toWin - fromWin).coerceAtLeast(1).toFloat()
-            for ((k, idx) in clause.withIndex()) {
+            val width = (toWin - fromWin).coerceAtLeast(1).toFloat()
+            for ((n, idx) in group.withIndex()) {
                 starts[idx] = (t * win).toInt()
-                t += span * weights[k] / total
+                t += width * weights[n] / total
             }
         }
-        if (anchors.isNotEmpty()) {
-            var from = first
-            for ((c, clause) in clauses.withIndex()) {
-                val to = if (c < anchors.size) anchors[c].first else last + 1
-                spread(clause, from, to)
-                if (c < anchors.size) from = anchors[c].last + 1
+        // Clauses between matched pauses are spread together.
+        var from = first
+        val group = mutableListOf<Int>()
+        for ((c, clause) in clauses.withIndex()) {
+            group += clause
+            val pause = if (c < breaks) chosen[c] else -1
+            if (pause >= 0) {
+                spread(group, from, pauses[pause].first)
+                from = pauses[pause].last + 1
+                group.clear()
             }
-        } else {
-            spread(matches.indices.toList(), first, last + 1)
         }
+        if (group.isNotEmpty()) spread(group, from, last + 1)
         return Plan(words, starts)
     }
 
