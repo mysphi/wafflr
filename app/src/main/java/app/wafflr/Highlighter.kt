@@ -82,6 +82,8 @@ class Highlighter(
     private class SentenceChars(val index: Int, val at: Rect, val chars: Array<RectF?>)
     private var sentenceChars: SentenceChars? = null
     private var charsFetching = -1          // sentence index being fetched
+    private var charsFailedFor = -1         // sentence the app couldn't place
+    private var charsFailRun = 0
     private val background = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     // Words found from a screenshot, for apps that can't say where their words are.
@@ -132,11 +134,15 @@ class Highlighter(
             ocrState = OCR_NONE
             sentenceChars = null
             charsFetching = -1
+            charsFailedFor = -1
+            charsFailRun = 0
+            stats = UnderlineStats()
             main.removeCallbacks(ticker)
             main.post(ticker)
         }
         if (state == ReaderState.IDLE) {
             main.removeCallbacks(ticker)
+            if (was != ReaderState.IDLE) reportStats()
             hide()
         }
     }
@@ -261,7 +267,7 @@ class Highlighter(
         if (key == wordKey) return
 
         // From the app, if it says where its characters are.
-        if (node != null && s.charStart >= 0 && !charsUnsupported) {
+        if (node != null && s.charStart >= 0 && !charsUnsupported && charsFailedFor != now.index) {
             val sc = sentenceChars?.takeIf { it.index == now.index }
             if (sc == null) {
                 fetchChars(now.index, node, s.charStart, now.sentence.length)
@@ -271,16 +277,44 @@ class Highlighter(
             val w = words[index]
             val dx = (b.left - sc.at.left).toFloat()
             val dy = (b.top - sc.at.top).toFloat()
-            wordRects = (w.first..w.last).mapNotNull { sc.chars.getOrNull(it) }
+            val rects = (w.first..w.last).mapNotNull { sc.chars.getOrNull(it) }
                 .map { RectF(it).apply { offset(dx, dy) } }
+            if (rects.isNotEmpty()) {
+                wordRects = rects
+                wordKey = key
+                stats.fromApp++
+                return
+            }
+            // The app had no place for this word: try the screenshot instead.
+        }
+        // From a screenshot of the paragraph.
+        wordRects = ocrWord(now, index, b) ?: emptyList()
+        if (ocrState == OCR_DONE) {
             wordKey = key
-            return
+            if (wordRects.isEmpty()) stats.missed++ else stats.fromScreenshot++
         }
-        if (charsUnsupported || node == null || s.charStart < 0) {
-            // From a screenshot of the paragraph.
-            wordRects = ocrWord(now, index, b) ?: emptyList()
-            if (ocrState == OCR_DONE) wordKey = key
-        }
+    }
+
+    /** How the underline found its words during a read, for the test report. */
+    private class UnderlineStats {
+        var fromApp = 0
+        var fromScreenshot = 0
+        var missed = 0
+        var appFetchFails = 0
+        var screenshotsFailed = 0
+        fun any() = fromApp + fromScreenshot + missed + appFetchFails + screenshotsFailed > 0
+    }
+    private var stats = UnderlineStats()
+
+    private fun reportStats() {
+        val st = stats
+        if (!st.any()) return
+        prefs.addResult(
+            "Underline: ${st.fromApp} words placed by the app, ${st.fromScreenshot} from screenshots, " +
+                "${st.missed} not found; app failed to answer ${st.appFetchFails} times, " +
+                "screenshots failed ${st.screenshotsFailed} times; app's places after scrolling " +
+                when (appTrusted) { true -> "matched"; false -> "didn't match"; null -> "not checked" } + "."
+        )
     }
 
     /** The word's place from the screenshot's words, starting a screenshot read if needed. */
@@ -300,6 +334,7 @@ class Highlighter(
                 main.post {
                     if (ocrSpot !== target && ocrSpot?.spot !== target.spot) return@post
                     if (found == null) {
+                        stats.screenshotsFailed++
                         ocrState = OCR_NONE
                         ocrRetryAt = SystemClock.uptimeMillis() + 1000
                         return@post
@@ -439,8 +474,12 @@ class Highlighter(
                 if (charsFetching != index) return@post
                 charsFetching = -1
                 if (result == null) {
-                    charsUnsupported = true
+                    // Use screenshots for this sentence; give up on the app after a few failures in a row.
+                    charsFailedFor = index
+                    stats.appFetchFails++
+                    if (++charsFailRun >= 3) charsUnsupported = true
                 } else {
+                    charsFailRun = 0
                     sentenceChars = SentenceChars(index, result.first, result.second)
                 }
                 wordKey = -1
