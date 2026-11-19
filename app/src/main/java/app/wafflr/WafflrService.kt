@@ -132,14 +132,15 @@ class WafflrService : AccessibilityService() {
     }
 
     private fun readArea(area: SelectedArea) {
-        areaReader.read(area) { result ->
+        areaReader.readSelection(area) { result ->
             bubble?.setHidden(false)
-            result.onSuccess { text ->
-                if (text.isBlank()) {
+            result.onSuccess { paragraphs ->
+                if (paragraphs.isEmpty()) {
                     Toast.makeText(this, "Wafflr couldn't find any text in that area.", Toast.LENGTH_SHORT).show()
                 } else {
                     val p = app.prefs
-                    app.reader.read(text, p.voice, p.speed, p.threads, "drawn area", p.tuning, area = area.bounds)
+                    // Each paragraph gets its own place, so the highlight moves from one to the next.
+                    app.reader.readPieces(paragraphs.map { (text, rect) -> text to Spot(rect) }, p.voice, p.speed, p.threads, "drawn area", p.tuning)
                 }
             }.onFailure { e ->
                 Toast.makeText(this, e.message ?: "Couldn't read that area.", Toast.LENGTH_LONG).show()
