@@ -86,7 +86,7 @@ class MainActivity : Activity(), ReaderListener {
         root.addView(shortcutWarning)
         root.addView(body(
             "Floating controls: tap the Wafflr logo to open them; drag it to move; long-press it to open this app. " +
-            "The speaker reads copied text (if you copied some in the last two minutes) or the whole screen, and becomes pause/resume while reading. " +
+            "The speaker reads the whole screen, and becomes pause/resume while reading. " +
             "Beside it: draw a box or a shape around just the text you want; while reading, previous, next and stop.\n" +
             "Or choose Share → Read with Wafflr (some apps also show 'Read with Wafflr' straight in the selection menu)."
         ))

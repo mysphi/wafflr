@@ -36,17 +36,8 @@ class WafflrService : AccessibilityService() {
         }
     }
 
-    /** Reads text you just copied, or else the whole screen. */
-    private fun onBubbleTap() {
-        try {
-            startActivity(
-                Intent(this, ClipboardReadActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            )
-        } catch (_: Throwable) {
-            readScreen() // couldn't check the clipboard; fall back
-        }
-    }
+    /** The speaker reads the whole screen. (It deliberately never reads the clipboard.) */
+    private fun onBubbleTap() = readScreen()
 
     private var selector: AreaSelector? = null
     private val areaReader by lazy { AreaReader(this) }

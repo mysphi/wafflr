@@ -8,13 +8,13 @@ Plan: see the project's development plan doc. Status: **Phase 2 (read part of th
 
 ## Using it
 
-- **Floating button** (over every app): tap to read the screen, tap again to pause or resume,
-  long-press to stop, drag to move. While reading, ⏮ and ⏭ go back or forward a sentence.
-- **Draw around text**: long-press the floating button, then drag a box (or switch to
-  freehand and draw a shape) around the text. Wafflr screenshots that area and recognises the
-  text on the phone (ML Kit, offline), so it also works on PDFs and images.
-- **Copied text**: select text and tap *Copy*, then tap the floating button within two
-  minutes; it reads the copied text instead of the whole screen.
+- **Floating controls** (over every app): a small, faded Wafflr logo sits at the screen edge.
+  Tap it to open the controls, drag it to move, long-press it to open the app. The speaker
+  rises out of the logo: tap it to read the whole screen, tap again to pause or resume.
+  While reading, previous, next and stop slide out beside it.
+- **Draw around text**: from the open controls, tap the box or pencil button, then drag a box
+  (or draw a shape) around the text. Wafflr screenshots that area and recognises the text on
+  the phone (ML Kit, offline), so it also works on PDFs and images.
 - **Share menu**: *Share → Read with Wafflr* works in most apps. Some apps (e.g. Chrome) also
   show *Read with Wafflr* straight in the selection menu.
 - **Voices**: Piper Alan is built in; Piper Jenny and six Kokoro voices download once, then work

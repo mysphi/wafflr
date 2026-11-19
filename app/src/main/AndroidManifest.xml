@@ -42,16 +42,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Invisible screen opened by the floating button: Android only lets the app in front
-             read the clipboard, so this briefly comes to the front to check for copied text. -->
-        <activity
-            android:name=".ClipboardReadActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:noHistory="true"
-            android:taskAffinity=""
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-
         <service
             android:name=".WafflrService"
             android:exported="false"

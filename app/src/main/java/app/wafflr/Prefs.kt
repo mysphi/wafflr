@@ -30,11 +30,6 @@ class Prefs(context: Context) {
         get() = sp.getInt("bubble_y", -1)
         set(v) = sp.edit().putInt("bubble_y", v).apply()
 
-    /** Timestamp of the copied text Wafflr last read, so the same copy isn't read twice. */
-    var lastClipStamp: Long
-        get() = sp.getLong("last_clip", 0L)
-        set(v) = sp.edit().putLong("last_clip", v).apply()
-
     /** Area reading: freehand shape (true) or box (false). */
     var areaFreehand: Boolean
         get() = sp.getBoolean("area_freehand", false)

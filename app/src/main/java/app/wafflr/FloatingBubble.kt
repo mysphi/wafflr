@@ -24,8 +24,8 @@ import kotlin.math.abs
  *
  *  - The Wafflr logo always stays on screen at the edge. Tap it to open or close the controls;
  *    drag it to move them; long-press it to open the Wafflr app.
- *  - When open, the speaker button slides up out of the logo. Tap it to read (copied text if you
- *    just copied some, otherwise the whole screen); while reading it becomes pause / resume.
+ *  - When open, the speaker button slides up out of the logo. Tap it to read the whole screen
+ *    (never the clipboard); while reading it becomes pause / resume.
  *  - Option buttons slide out beside the speaker, towards the middle of the screen:
  *    "draw a box" and "draw a shape" when idle, then previous / next / stop while reading.
  *
@@ -44,6 +44,7 @@ class FloatingBubble(
     private fun dp(v: Int) = (v * density).toInt()
     private val main = Handler(Looper.getMainLooper())
     private val size = dp(52)
+    private val logoSize = dp(38) // smaller than the buttons, and faded until opened
     private val gap = dp(10)
 
     private val logo = RoundButton(R.drawable.ic_wafflr, "Wafflr: show or hide controls")
@@ -116,7 +117,12 @@ class FloatingBubble(
         root.addView(topRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = gap
         })
-        root.addView(logo, buttonLp())
+        // Centre the smaller logo under the speaker.
+        root.addView(logo, LinearLayout.LayoutParams(logoSize, logoSize).apply {
+            val inset = (size - logoSize) / 2
+            if (onRight) rightMargin = inset else leftMargin = inset
+        })
+        logo.alpha = logoAlpha()
         topRow.visibility = if (expanded) View.VISIBLE else View.GONE
         optionsFor = null
         refreshOptions(animate = false)
@@ -133,10 +139,18 @@ class FloatingBubble(
 
     // --- opening and closing ---------------------------------------------------------------
 
+    /** Faded while closed and idle, solid while open or reading. */
+    private fun logoAlpha() = if (expanded || state != ReaderState.IDLE) 1f else IDLE_ALPHA
+
+    private fun fadeLogo() {
+        logo.animate().alpha(logoAlpha()).setDuration(200).start()
+    }
+
     private fun setExpanded(open: Boolean) {
         if (open == expanded) return
         expanded = open
         if (!open) openedForReading = false
+        fadeLogo()
         speaker.animate().cancel()
         if (open) {
             topRow.visibility = View.VISIBLE
@@ -231,6 +245,7 @@ class FloatingBubble(
             },
         )
         speaker.setBusy(state == ReaderState.PREPARING)
+        fadeLogo()
         refreshOptions(animate = true)
         if (state != ReaderState.IDLE && !expanded) {
             // Reading started from elsewhere (e.g. Share): show the player.
@@ -347,5 +362,6 @@ class FloatingBubble(
     companion object {
         private const val BLUE = "#2D6CDF"
         private const val PALE = "#E6EEFC"
+        private const val IDLE_ALPHA = 0.45f
     }
 }
