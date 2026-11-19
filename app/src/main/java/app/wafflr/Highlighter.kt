@@ -146,7 +146,7 @@ class Highlighter(
         if (state == ReaderState.IDLE) {
             main.removeCallbacks(ticker)
             if (was != ReaderState.IDLE) reportStats()
-            hide()
+            detach()
         }
     }
 
@@ -202,9 +202,10 @@ class Highlighter(
     }
 
     private fun tick() {
-        if (suppressed || !prefs.highlight || state == ReaderState.PREPARING) { hide(); return }
+        if (suppressed || !prefs.highlight) { hide(); return }
+        if (state == ReaderState.PREPARING) { softHide("waiting for the voice"); return }
         val now = reader.nowPlaying() ?: return
-        val s = now.spot ?: run { hide(); return }
+        val s = now.spot ?: run { softHide("no place for this sentence"); return }
         val node = s.spot.node
         val t = SystemClock.uptimeMillis()
         if (s !== spot) {
@@ -264,7 +265,11 @@ class Highlighter(
             }
             movedUnchecked = false
         }
-        val b = box ?: run { hide(); return }
+        val b = box ?: run {
+            if (needsLocate || lostForThisRead) hide() // deliberately hidden until found again
+            else softHide(if (unseen > 0) "app said off screen" else "place unknown")
+            return
+        }
 
         if (prefs.underlineWords) underline(now, s, live ?: node, b, scrolling) else wordRects = emptyList()
         show(b, wordRects)
@@ -314,7 +319,8 @@ class Highlighter(
         var missed = 0
         var appFetchFails = 0
         var screenshotsFailed = 0
-        fun any() = fromApp + fromScreenshot + missed + appFetchFails + screenshotsFailed > 0
+        val hides = HashMap<String, Int>()
+        fun any() = fromApp + fromScreenshot + missed + appFetchFails + screenshotsFailed > 0 || hides.isNotEmpty()
     }
     private var stats = UnderlineStats()
 
@@ -325,7 +331,9 @@ class Highlighter(
             "Underline: ${st.fromApp} words placed by the app, ${st.fromScreenshot} from screenshots, " +
                 "${st.missed} not found; app failed to answer ${st.appFetchFails} times, " +
                 "screenshots failed ${st.screenshotsFailed} times; app's places after scrolling " +
-                when (appTrusted) { true -> "matched"; false -> "didn't match"; null -> "not checked" } + "."
+                when (appTrusted) { true -> "matched"; false -> "didn't match"; null -> "not checked" } + "." +
+                if (st.hides.isEmpty()) "" else " Box briefly lost: " +
+                    st.hides.entries.joinToString(", ") { "${it.key} ×${it.value}" } + "."
         )
     }
 
@@ -522,15 +530,38 @@ class Highlighter(
     }
 
     private fun show(b: Rect, words: List<RectF>) {
+        main.removeCallbacks(hideNow)
         if (!added) {
             try { wm.addView(view, params); added = true } catch (_: Throwable) { return }
         }
+        view.visibility = View.VISIBLE
         view.target = b
         view.words = words
         view.invalidate()
     }
 
+    /**
+     * Hides the box only if the reason lasts: brief hiccups (the app slow to answer, the voice a
+     * moment late) would otherwise make it blink.
+     */
+    private val hideNow = Runnable { hide() }
+    private fun softHide(reason: String) {
+        if (!added || view.visibility != View.VISIBLE) return
+        if (!main.hasCallbacks(hideNow)) {
+            stats.hides[reason] = (stats.hides[reason] ?: 0) + 1
+            main.postDelayed(hideNow, HIDE_GRACE_MS)
+        }
+    }
+
+    /** Hides the box (kept ready to show again quickly). */
     fun hide() {
+        main.removeCallbacks(hideNow)
+        if (added) view.visibility = View.INVISIBLE
+    }
+
+    /** Takes the box off the screen altogether, when reading ends. */
+    fun detach() {
+        main.removeCallbacks(hideNow)
         if (!added) return
         try { wm.removeView(view) } catch (_: Throwable) {}
         added = false
@@ -578,6 +609,7 @@ class Highlighter(
         private const val FOLLOW_MS = 500L
         private const val SETTLE_MS = 250L
         private const val RECHECK_MS = 1000L
+        private const val HIDE_GRACE_MS = 500L
         private const val LOCATE_RETRY_MS = 1500L
         private const val OCR_NONE = 0
         private const val OCR_PENDING = 1

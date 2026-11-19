@@ -187,7 +187,7 @@ class Reader(private val context: Context, private val models: Models) {
         private var written = 0L
 
         /** The track was flushed: its play position starts again from zero. */
-        private fun resetTimeline() = synchronized(segments) { segments.clear(); written = 0 }
+        private fun resetTimeline() = synchronized(segments) { segments.clear(); written = 0; lastHeard = 0 }
 
         private val stamp = android.media.AudioTimestamp()
 
@@ -199,14 +199,23 @@ class Reader(private val context: Context, private val models: Models) {
          */
         private fun heardPosition(t: AudioTrack): Long {
             val head = t.playbackHeadPosition.toLong() and 0xffffffffL
-            if (!t.getTimestamp(stamp)) return head
-            val now = System.nanoTime()
-            val age = now - stamp.nanoTime
-            if (age < 0 || age > 2_000_000_000L) return head
             val playing = t.playState == AudioTrack.PLAYSTATE_PLAYING
-            val est = stamp.framePosition + if (playing) age * t.sampleRate / 1_000_000_000L else 0L
-            return est.coerceIn(0L, head)
+            val raw = when {
+                !playing -> if (lastHeard > 0) lastHeard else head // paused: stay put
+                !t.getTimestamp(stamp) -> head
+                else -> {
+                    val age = System.nanoTime() - stamp.nanoTime
+                    if (age < 0 || age > 2_000_000_000L) head
+                    else stamp.framePosition + age * t.sampleRate / 1_000_000_000L
+                }
+            }
+            // Never step backwards: a fresh timestamp can land slightly behind the last estimate,
+            // which at the end of a sentence would flick the highlight back to the one before.
+            val heard = maxOf(raw.coerceIn(0L, head), lastHeard.coerceAtMost(head))
+            lastHeard = heard
+            return heard
         }
+        @Volatile private var lastHeard = 0L
 
         /** The sentence being heard and how far through it, from the speaker's play position. */
         fun nowPlaying(): NowPlaying? {

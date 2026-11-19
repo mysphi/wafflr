@@ -228,7 +228,7 @@ class WafflrService : AccessibilityService() {
         selector = null
         bubble?.hide()
         bubble = null
-        highlighter?.let { app.reader.removeListener(it); it.hide() }
+        highlighter?.let { app.reader.removeListener(it); it.detach() }
         highlighter = null
         app.reader.stop()
         if (instance === this) instance = null
