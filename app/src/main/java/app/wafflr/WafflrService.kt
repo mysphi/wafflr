@@ -212,7 +212,7 @@ class WafflrService : AccessibilityService() {
                 } catch (_: Throwable) { null }
                 h.pageMoved(event.scrollDeltaX, event.scrollDeltaY, area)
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> highlighter?.pageMoved()
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> highlighter?.pageMoved(-1, -1) // a new screen: treat as moved
         }
     }
 

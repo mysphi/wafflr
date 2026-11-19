@@ -47,6 +47,8 @@ class Highlighter(
     private var lostForThisRead = false // picture-based text and the page moved
     private var spot: SentenceSpot? = null
     private var box: Rect? = null           // where the box is drawn, in screen pixels
+        set(value) { field = value; if (value != null) lastKnownBox = value }
+    private var lastKnownBox: Rect? = null
     private var needsCheck = true           // look the box up in the app again when settled
     private var lastCheck = 0L
     private var unseen = 0                  // checks in a row that found the text off screen
@@ -125,6 +127,7 @@ class Highlighter(
             lostForThisRead = false
             spot = null
             live = null
+            lastKnownBox = null
             trustScrolls = true
             movedUnchecked = false
             scrolledThisRead = false
@@ -160,7 +163,16 @@ class Highlighter(
         if (state == ReaderState.IDLE) return
         val s = spot ?: return
         val b = box
-        if (b != null && area != null && !Rect.intersects(area, b)) return // another part of the screen scrolled
+        // Another part of the screen scrolled (a carousel, a menu bar): not our text. Judged by
+        // the last place the box was, even while it's hidden.
+        val ref = b ?: lastKnownBox
+        if (ref != null && area != null && !Rect.intersects(area, ref)) return
+        if (dx == 0 && dy == 0 && area != null) {
+            // A "scrolled" report with no distance: apps send these for small layout updates.
+            // Not worth hiding the box for; just check its place again.
+            if (appTrusted != false) needsCheck = true
+            return
+        }
         val now = SystemClock.uptimeMillis()
         scrollSeq++
         scrolledThisRead = true
