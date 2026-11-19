@@ -35,6 +35,38 @@ class AreaReader(private val service: AccessibilityService) {
         capture({ onResult(Result.failure(it)) }) { bitmap -> recognise(bitmap, 0, 0, onResult) }
     }
 
+    /**
+     * The words inside [rect] on screen, in reading order, each with its box in screen pixels.
+     * Used to underline words in apps that don't say where their words are. Null if the screen
+     * couldn't be captured or read.
+     */
+    fun readWords(rect: Rect, onResult: (List<Pair<String, Rect>>?) -> Unit) {
+        capture({ onResult(null) }) { full ->
+            val left = rect.left.coerceIn(0, full.width - 1)
+            val top = rect.top.coerceIn(0, full.height - 1)
+            val right = rect.right.coerceIn(left + 1, full.width)
+            val bottom = rect.bottom.coerceIn(top + 1, full.height)
+            val crop = Bitmap.createBitmap(full, left, top, right - left, bottom - top)
+            if (crop !== full) full.recycle()
+            recognizer.process(InputImage.fromBitmap(crop, 0))
+                .addOnSuccessListener { visionText ->
+                    val blocks = visionText.textBlocks.sortedWith(
+                        compareBy({ (it.boundingBox?.top ?: 0) / ROW_BAND }, { it.boundingBox?.left ?: 0 })
+                    )
+                    val words = blocks.flatMap { b -> b.lines.flatMap { l -> l.elements } }.mapNotNull { e ->
+                        val box = e.boundingBox ?: return@mapNotNull null
+                        e.text to Rect(box).apply { offset(left, top) }
+                    }
+                    crop.recycle()
+                    onResult(words)
+                }
+                .addOnFailureListener {
+                    crop.recycle()
+                    onResult(null)
+                }
+        }
+    }
+
     private fun capture(onError: (Throwable) -> Unit, onBitmap: (Bitmap) -> Unit) {
         service.takeScreenshot(
             Display.DEFAULT_DISPLAY,

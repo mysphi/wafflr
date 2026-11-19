@@ -2,6 +2,7 @@ package app.wafflr
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.graphics.Rect
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
@@ -24,7 +25,7 @@ class WafflrService : AccessibilityService() {
         instance = this
         app.prefs.prefs.registerOnSharedPreferenceChangeListener(prefListener)
         updateBubble()
-        highlighter = Highlighter(this, app.prefs, app.reader).also { app.reader.addListener(it) }
+        highlighter = Highlighter(this, app.prefs, app.reader) { rect, done -> areaReader.readWords(rect, done) }.also { app.reader.addListener(it) }
     }
 
     private fun updateBubble() {
@@ -136,7 +137,14 @@ class WafflrService : AccessibilityService() {
         // The page scrolled or changed under the highlight: it would point at the wrong text.
         if (event.packageName?.toString() == packageName) return
         when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> highlighter?.pageMoved(event.scrollDeltaX, event.scrollDeltaY)
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> highlighter?.let { h ->
+                if (!h.active) return
+                // Which part of the screen scrolled, so a carousel elsewhere doesn't move the box.
+                val area = try {
+                    event.source?.let { Rect().also { r -> it.getBoundsInScreen(r) } }
+                } catch (_: Throwable) { null }
+                h.pageMoved(event.scrollDeltaX, event.scrollDeltaY, area)
+            }
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> highlighter?.pageMoved()
         }
     }

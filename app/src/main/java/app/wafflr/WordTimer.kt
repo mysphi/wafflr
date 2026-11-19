@@ -19,11 +19,14 @@ import kotlin.math.sqrt
 object WordTimer {
     /** Word ranges in the sentence, and the audio frame each one starts at. */
     class Plan(val words: List<IntRange>, val starts: IntArray) {
-        fun wordAt(frame: Int): IntRange? {
+        fun wordAt(frame: Int): IntRange? = indexAt(frame)?.let { words[it] }
+
+        /** Which word (counting from 0) is being spoken at [frame]. */
+        fun indexAt(frame: Int): Int? {
             if (words.isEmpty()) return null
             var i = 0
             while (i + 1 < starts.size && frame >= starts[i + 1]) i++
-            return words[i]
+            return i
         }
     }
 
