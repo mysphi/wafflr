@@ -39,6 +39,16 @@ class Prefs(context: Context) {
     val readOptions: ReadOptions
         get() = ReadOptions(readHeadings, readMenus, readPictures, readDetails, readLeadIn)
 
+    var pitch: Float
+        get() = sp.getFloat("pitch", 1.0f)
+        set(v) = sp.edit().putFloat("pitch", v).apply()
+
+    var expression: Float
+        get() = sp.getFloat("expression", Tuning.DEFAULT_EXPRESSION)
+        set(v) = sp.edit().putFloat("expression", v).apply()
+
+    val tuning: Tuning get() = Tuning(pitch, expression)
+
     var bubbleEnabled: Boolean
         get() = sp.getBoolean("bubble", true)
         set(v) = sp.edit().putBoolean("bubble", v).apply()

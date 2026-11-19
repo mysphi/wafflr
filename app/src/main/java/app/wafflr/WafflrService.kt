@@ -71,7 +71,7 @@ class WafflrService : AccessibilityService() {
                     Toast.makeText(this, "Wafflr couldn't find any text in that area.", Toast.LENGTH_SHORT).show()
                 } else {
                     val p = app.prefs
-                    app.reader.read(text, p.voice, p.speed, p.threads, "drawn area")
+                    app.reader.read(text, p.voice, p.speed, p.threads, "drawn area", p.tuning)
                 }
             }.onFailure { e ->
                 Toast.makeText(this, e.message ?: "Couldn't read that area.", Toast.LENGTH_LONG).show()
@@ -86,7 +86,7 @@ class WafflrService : AccessibilityService() {
             Toast.makeText(this, "Wafflr couldn't find any text to read here.", Toast.LENGTH_SHORT).show()
             return
         }
-        app.reader.read(found.text, p.voice, p.speed, p.threads, found.summary())
+        app.reader.read(found.text, p.voice, p.speed, p.threads, found.summary(), p.tuning)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}

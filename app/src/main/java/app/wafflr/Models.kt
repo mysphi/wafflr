@@ -37,16 +37,16 @@ class Models(private val store: VoiceStore) {
 
     /** Blocking. Downloads/unpacks the voice if needed, then loads it. */
     @Synchronized
-    fun get(voice: Voice, threads: Int, progress: (String) -> Unit): LoadedModel {
+    fun get(voice: Voice, threads: Int, expression: Float = Tuning.DEFAULT_EXPRESSION, progress: (String) -> Unit): LoadedModel {
         if (!store.isInstalled(voice.pack)) store.install(voice.pack, progress)
-        val key = "${voice.pack.id}|${voice.lexicon}|$threads"
+        val key = "${voice.pack.id}|${voice.lexicon}|$threads|$expression"
         current?.let { if (it.key == key) return it }
         progress("Loading voice…")
         current?.tts?.release()
         current = null
         checkFiles(voice)
         val t0 = SystemClock.elapsedRealtime()
-        val tts = OfflineTts(config = buildConfig(voice, threads))
+        val tts = OfflineTts(config = buildConfig(voice, threads, expression))
         // If sherpa-onnx rejects the config it returns a null engine instead of throwing,
         // and the next call would crash the whole app. Check first.
         if (nativePointer(tts) == 0L) error("The voice engine could not load ${voice.label}.")
@@ -75,7 +75,7 @@ class Models(private val store: VoiceStore) {
         -1L // can't tell; carry on
     }
 
-    private fun buildConfig(voice: Voice, threads: Int): OfflineTtsConfig {
+    private fun buildConfig(voice: Voice, threads: Int, expression: Float): OfflineTtsConfig {
         val dir = store.dirFor(voice.pack)
         val espeak = File(dir, "espeak-ng-data").absolutePath
         val model = when (voice.pack.kind) {
@@ -87,6 +87,7 @@ class Models(private val store: VoiceStore) {
                         model = onnx.absolutePath,
                         tokens = File(dir, "tokens.txt").absolutePath,
                         dataDir = espeak,
+                        noiseScale = expression,
                     ),
                     numThreads = threads,
                     provider = "cpu",

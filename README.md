@@ -4,7 +4,7 @@ An offline "read this to me" app for Android, built as a reading aid for people 
 A floating button sits over any app; select text or draw around it and Wafflr reads it aloud with
 natural Piper voices, entirely on the phone. A Windows version is planned later.
 
-Plan: see the project's development plan doc. Status: **Phase 3 (read only the main text)**.
+Plan: see the project's development plan doc. Status: **Phase 4 (voice settings)**.
 
 ## Using it
 
@@ -64,5 +64,6 @@ over the previous one. It must not be used for a Play Store release.
 ## Credits and licences
 
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0) runs the voices.
-- Kokoro-82M (Apache-2.0) and Piper voices; each Piper voice has its own licence, to be checked
-  before any public release.
+- Piper voices; each Piper voice has its own licence, to be checked before any public release.
+- [Sonic](https://github.com/waywardgeek/sonic) by Bill Cox (Apache-2.0), vendored as
+  `app/src/main/java/sonic/Sonic.java`, shifts the pitch.

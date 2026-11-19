@@ -75,14 +75,17 @@ class Reader(private val context: Context, private val models: Models) {
 
     val isActive: Boolean get() = status.state != ReaderState.IDLE
 
-    fun read(text: String, voice: Voice, speed: Float, threads: Int, source: String) {
+    fun read(text: String, voice: Voice, speed: Float, threads: Int, source: String, tuning: Tuning = Tuning()) {
         stop()
         val sentences = TextSplitter.split(text)
         if (sentences.isEmpty()) {
             publishError("There is no text to read.")
             return
         }
-        val s = Session(sentences, voice, speed, threads, source, text.length)
+        // Note non-default tuning in the test report.
+        val label = if (tuning == Tuning()) source
+            else "$source, pitch %.2f, expression %.2f".format(tuning.pitch, tuning.expression)
+        val s = Session(sentences, voice, speed, threads, label, text.length, tuning)
         session = s
         s.start()
     }
@@ -122,6 +125,7 @@ class Reader(private val context: Context, private val models: Models) {
         val threads: Int,
         val source: String,
         val chars: Int,
+        val tuning: Tuning,
     ) {
         private val lock = Object()
         private var cur = 0
@@ -190,7 +194,7 @@ class Reader(private val context: Context, private val models: Models) {
             var finished = false
             try {
                 publish(ReaderStatus(ReaderState.PREPARING, 0, sentences.size, "Getting the voice ready…"), this)
-                model = models.get(voice, threads) { msg ->
+                model = models.get(voice, threads, tuning.expression) { msg ->
                     publish(ReaderStatus(ReaderState.PREPARING, 0, sentences.size, msg), this)
                 }
                 if (isStopped()) return
@@ -292,7 +296,9 @@ class Reader(private val context: Context, private val models: Models) {
                         cache.keys.removeAll { it < cur - 2 }
                     }
                     val t0 = SystemClock.elapsedRealtime()
-                    val audio = models.generate(model, sentences[target], voice.sid, speed)
+                    val audio = PitchShift.apply(
+                        models.generate(model, sentences[target], voice.sid, speed), model.sampleRate, tuning.pitch,
+                    )
                     val took = SystemClock.elapsedRealtime() - t0
                     synchronized(lock) {
                         cache[target] = audio
