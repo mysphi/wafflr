@@ -19,7 +19,7 @@ data class ReaderStatus(
     val total: Int = 0,
     val message: String = "",
     /** Where on screen the text being read is, if known, for the highlight. */
-    val region: android.graphics.Rect? = null,
+    val region: SentenceSpot? = null,
 )
 
 /** Timings from one read, used to compare voices on the phone. */
@@ -50,6 +50,9 @@ data class SpeechResult(
         if (!finished) append("\n  (stopped before the end)")
     }
 }
+
+/** A sentence written to the speaker: its index, first frame and length in frames. */
+private class Segment(val index: Int, val start: Long, val length: Int)
 
 interface ReaderListener {
     fun onStatus(status: ReaderStatus) {}
@@ -83,7 +86,8 @@ class Reader(private val context: Context, private val models: Models) {
         tuning: Tuning = Tuning(), area: android.graphics.Rect? = null,
     ) {
         val sentences = TextSplitter.split(text)
-        start(sentences, area?.let { a -> List(sentences.size) { a } }, voice, speed, threads, source, tuning, text.length)
+        val spot = area?.let { SentenceSpot(Spot(it), -1) }
+        start(sentences, spot?.let { s -> List(sentences.size) { s } }, voice, speed, threads, source, tuning, text.length)
     }
 
     /**
@@ -91,19 +95,27 @@ class Reader(private val context: Context, private val models: Models) {
      * can be highlighted.
      */
     fun readPieces(
-        pieces: List<Pair<String, android.graphics.Rect?>>, voice: Voice, speed: Float, threads: Int,
+        pieces: List<Pair<String, Spot?>>, voice: Voice, speed: Float, threads: Int,
         source: String, tuning: Tuning = Tuning(),
     ) {
         val sentences = mutableListOf<String>()
-        val regions = mutableListOf<android.graphics.Rect?>()
-        for ((text, rect) in pieces) {
-            for (s in TextSplitter.split(text)) { sentences += s; regions += rect }
+        val regions = mutableListOf<SentenceSpot?>()
+        for ((text, spot) in pieces) {
+            var from = 0
+            val plain = text.replace('\u00A0', ' ') // same length; the splitter turns these into spaces
+            for (s in TextSplitter.split(text)) {
+                // Where the sentence starts in the node's text, for underlining its words.
+                val at = plain.indexOf(s, from)
+                if (at >= 0) from = at + s.length
+                sentences += s
+                regions += spot?.let { SentenceSpot(it, if (at >= 0 && it.node != null) it.textStart + at else -1) }
+            }
         }
         start(sentences, regions, voice, speed, threads, source, tuning, pieces.sumOf { it.first.length })
     }
 
     private fun start(
-        sentences: List<String>, regions: List<android.graphics.Rect?>?, voice: Voice, speed: Float,
+        sentences: List<String>, regions: List<SentenceSpot?>?, voice: Voice, speed: Float,
         threads: Int, source: String, tuning: Tuning, chars: Int,
     ) {
         stop()
@@ -124,6 +136,9 @@ class Reader(private val context: Context, private val models: Models) {
         val s = session ?: return
         if (s.paused) s.resume() else s.pause()
     }
+
+    /** What is being heard right now, for the highlight; null when nothing is playing. */
+    fun nowPlaying(): NowPlaying? = session?.nowPlaying()
 
     fun pause() { session?.pause() }
     fun resume() { session?.resume() }
@@ -165,8 +180,26 @@ class Reader(private val context: Context, private val models: Models) {
         val source: String,
         val chars: Int,
         val tuning: Tuning,
-        val regions: List<android.graphics.Rect?>?,
+        val regions: List<SentenceSpot?>?,
     ) {
+        /** What has been written to the speaker, so the sentence being heard can be found. */
+        private val segments = ArrayDeque<Segment>()
+        private var written = 0L
+
+        /** The track was flushed: its play position starts again from zero. */
+        private fun resetTimeline() = synchronized(segments) { segments.clear(); written = 0 }
+
+        /** The sentence being heard and how far through it, from the speaker's play position. */
+        fun nowPlaying(): NowPlaying? {
+            val t = track ?: return null
+            val head = try { t.playbackHeadPosition.toLong() and 0xffffffffL } catch (_: Throwable) { return null }
+            val seg = synchronized(segments) {
+                segments.lastOrNull { head >= it.start } ?: return null
+            }
+            val fraction = ((head - seg.start).toFloat() / seg.length).coerceIn(0f, 1f)
+            return NowPlaying(seg.index, fraction, sentences[seg.index], regions?.getOrNull(seg.index))
+        }
+
         private val lock = Object()
         private var cur = 0
         private var jumpTo = -1
@@ -217,7 +250,7 @@ class Reader(private val context: Context, private val models: Models) {
                 lock.notifyAll()
             }
             // Drop the rest of the current sentence straight away (also frees a blocked write).
-            try { track?.let { it.pause(); it.flush(); if (!paused) it.play() } } catch (_: Throwable) {}
+            try { track?.let { it.pause(); it.flush(); resetTimeline(); if (!paused) it.play() } } catch (_: Throwable) {}
         }
 
         fun stop() {
@@ -288,6 +321,10 @@ class Reader(private val context: Context, private val models: Models) {
                     if (jumpTo >= 0) null else cache[i]
                 } ?: continue
 
+                synchronized(segments) {
+                    segments.addLast(Segment(i, written, audio.size))
+                    while (segments.size > 8) segments.removeFirst()
+                }
                 var off = 0
                 var jumped = false
                 while (off < audio.size) {
@@ -300,9 +337,10 @@ class Reader(private val context: Context, private val models: Models) {
                     val w = t.write(audio, off, minOf(BLOCK, audio.size - off), AudioTrack.WRITE_BLOCKING)
                     if (w <= 0) break
                     off += w
+                    synchronized(segments) { written += w }
                 }
                 if (jumped) {
-                    t.pause(); t.flush()
+                    t.pause(); t.flush(); resetTimeline()
                     if (!paused) t.play()
                     continue
                 }

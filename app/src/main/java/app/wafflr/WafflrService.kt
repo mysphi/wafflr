@@ -24,7 +24,7 @@ class WafflrService : AccessibilityService() {
         instance = this
         app.prefs.prefs.registerOnSharedPreferenceChangeListener(prefListener)
         updateBubble()
-        highlighter = Highlighter(this, app.prefs).also { app.reader.addListener(it) }
+        highlighter = Highlighter(this, app.prefs, app.reader).also { app.reader.addListener(it) }
     }
 
     private fun updateBubble() {
@@ -119,7 +119,7 @@ class WafflrService : AccessibilityService() {
                         !(short && (r.centerY() > screenH * 0.88 || r.centerY() < screenH * 0.12))
                 }
                 val tidied = TextTidy.tidy(kept.map { it.first }, p.readOptions)
-                val pieces = tidied.kept.map { kept[it].first to kept[it].second }
+                val pieces = tidied.kept.map { kept[it].first to Spot(kept[it].second) }
                 when {
                     pieces.isNotEmpty() ->
                         app.reader.readPieces(pieces, p.voice, p.speed, p.threads, "whole screen, from a picture (app shared no text)", p.tuning)

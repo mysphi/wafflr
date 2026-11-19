@@ -90,6 +90,8 @@ class SettingsActivity : WafflrScreen() {
         root.addView(heading("While reading"))
         readSwitch("Highlight what's being read", "A soft yellow box around the paragraph or area being read", prefs.highlight) { prefs.highlight = it }
             .let(root::addView)
+        readSwitch("Underline each word", "A thin line under the word being spoken, in apps that say where their words are", prefs.underlineWords) { prefs.underlineWords = it }
+            .let(root::addView)
         root.addView(body(
             "Headphone buttons and the lock screen can pause, skip and stop. For a quick start, add the " +
             "Wafflr tile to Quick Settings: pull down the shade, tap the pencil, and drag Wafflr in."

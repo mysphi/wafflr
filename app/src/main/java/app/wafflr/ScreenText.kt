@@ -23,7 +23,7 @@ data class ReadOptions(
 /** What Wafflr found on screen, and what it left out. */
 class ScreenRead(
     /** Each piece of text to read, with where it is on screen. */
-    val pieces: List<Pair<String, android.graphics.Rect>>,
+    val pieces: List<Pair<String, Spot>>,
     /** Pieces of text skipped as menus, toolbars, buttons, tabs or navigation. */
     val skippedControls: Int,
     val skippedHeadings: Int,
@@ -106,17 +106,17 @@ object ScreenText {
         val filtered = Collector(filter = true, options = options, page = rootBounds)
             .also { it.collect(root, 0, null, NO_TAP) }
         val tidied = TextTidy.tidy(filtered.parts, options)
-        val pieces = join(tidied.kept.map { filtered.parts[it] to filtered.rects[it] })
+        val pieces = join(tidied.kept.map { filtered.parts[it] to filtered.spots[it] })
         if (pieces.isNotEmpty()) {
             return ScreenRead(pieces, filtered.skippedControls, filtered.skippedHeadings, filtered.skippedImages + tidied.skipped, false, filtered.chromeRects)
         }
         val everything = Collector(filter = false, options = options, page = rootBounds).also { it.collect(root, 0, null, NO_TAP) }
-        val all = join(everything.parts.indices.map { everything.parts[it] to everything.rects[it] })
+        val all = join(everything.parts.indices.map { everything.parts[it] to everything.spots[it] })
         return ScreenRead(all, 0, 0, 0, all.isNotEmpty(), filtered.chromeRects)
     }
 
     /** Drops exact repeats (e.g. a title shown twice) while keeping order. */
-    private fun join(parts: List<Pair<String, android.graphics.Rect>>): List<Pair<String, android.graphics.Rect>> {
+    private fun join(parts: List<Pair<String, Spot>>): List<Pair<String, Spot>> {
         val seen = HashSet<String>()
         return parts.filter { it.first.isNotBlank() && seen.add(it.first) }
     }
@@ -140,8 +140,8 @@ object ScreenText {
         private val skipPictures = filter && !options.pictures
         private val skipHeadings = filter && !options.headings
         val parts = mutableListOf<String>()
-        /** Where each of [parts] is on screen. */
-        val rects = mutableListOf<android.graphics.Rect>()
+        /** Where each of [parts] is on screen (its node, so it can be found again after scrolling). */
+        val spots = mutableListOf<Spot>()
         var skippedControls = 0
         var skippedHeadings = 0
         var skippedImages = 0
@@ -175,7 +175,8 @@ object ScreenText {
                     skipMenus && isBottomBarLabel(node, text, page) -> { skippedControls++; chromeRects += boundsOf(node) }
                     else -> {
                         parts += text
-                        rects += android.graphics.Rect().also { node.getBoundsInScreen(it) }
+                        val raw = node.text?.toString().orEmpty()
+                        spots += Spot(boundsOf(node), node, raw.length - raw.trimStart().length)
                     }
                 }
                 context = text

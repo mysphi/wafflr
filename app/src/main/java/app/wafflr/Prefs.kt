@@ -54,6 +54,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("highlight", true)
         set(v) = sp.edit().putBoolean("highlight", v).apply()
 
+    /** Underline the word being spoken (where the app says where its words are). */
+    var underlineWords: Boolean
+        get() = sp.getBoolean("underline_words", true)
+        set(v) = sp.edit().putBoolean("underline_words", v).apply()
+
     var bubbleEnabled: Boolean
         get() = sp.getBoolean("bubble", true)
         set(v) = sp.edit().putBoolean("bubble", v).apply()
