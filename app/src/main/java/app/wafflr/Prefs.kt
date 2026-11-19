@@ -22,6 +22,23 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("read_headings", false)
         set(v) = sp.edit().putBoolean("read_headings", v).apply()
 
+    /** "Read this too" switches for whole-screen reading; all off by default. */
+    var readMenus: Boolean
+        get() = sp.getBoolean("read_menus", false)
+        set(v) = sp.edit().putBoolean("read_menus", v).apply()
+    var readPictures: Boolean
+        get() = sp.getBoolean("read_pictures", false)
+        set(v) = sp.edit().putBoolean("read_pictures", v).apply()
+    var readDetails: Boolean
+        get() = sp.getBoolean("read_details", false)
+        set(v) = sp.edit().putBoolean("read_details", v).apply()
+    var readLeadIn: Boolean
+        get() = sp.getBoolean("read_lead_in", false)
+        set(v) = sp.edit().putBoolean("read_lead_in", v).apply()
+
+    val readOptions: ReadOptions
+        get() = ReadOptions(readHeadings, readMenus, readPictures, readDetails, readLeadIn)
+
     var bubbleEnabled: Boolean
         get() = sp.getBoolean("bubble", true)
         set(v) = sp.edit().putBoolean("bubble", v).apply()

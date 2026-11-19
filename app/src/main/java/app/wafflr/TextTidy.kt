@@ -41,15 +41,15 @@ object TextTidy {
     )
     private val greeting = Regex("^(hi|hello|hey|dear|good (morning|afternoon|evening))\\b", RegexOption.IGNORE_CASE)
 
-    fun tidy(lines: List<String>): Result {
+    fun tidy(lines: List<String>, options: ReadOptions = ReadOptions()): Result {
         var skipped = 0
         val kept = lines.filter { line ->
-            val drop = isImageLabel(line) || isDetail(line)
+            val drop = (!options.pictures && isImageLabel(line)) || (!options.details && isDetail(line))
             if (drop) skipped++
             !drop
         }
         // Lead-in: drop short non-sentences before the first real sentence.
-        val first = kept.indexOfFirst { isSentence(it) }
+        val first = if (options.leadIn) -1 else kept.indexOfFirst { isSentence(it) }
         if (first <= 0) return Result(kept, skipped)
         val out = mutableListOf<String>()
         for ((i, line) in kept.withIndex()) {

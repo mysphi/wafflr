@@ -73,16 +73,19 @@ class SettingsActivity : WafflrScreen() {
         // --- What Wafflr reads -------------------------------------------------------------------
         root.addView(heading("What Wafflr reads"))
         root.addView(body(
-            "When reading the whole screen, Wafflr skips menus, toolbars, buttons, tabs and navigation, " +
-            "and reads just the main text."
+            "When reading the whole screen, Wafflr reads just the main text. Turn a switch on to " +
+            "have that kind of text read too."
         ))
-        root.addView(Switch(this).apply {
-            text = "Read headings too"
-            textSize = 16f
-            isChecked = prefs.readHeadings
-            setOnCheckedChangeListener { _, on -> prefs.readHeadings = on }
-            setPadding(0, (12 * dp).toInt(), 0, (12 * dp).toInt())
-        })
+        readSwitch("Headings", "Titles and section headings", prefs.readHeadings) { prefs.readHeadings = it }
+            .let(root::addView)
+        readSwitch("Menus and buttons", "Toolbars, tabs, navigation bars and labels like Home or Search", prefs.readMenus) { prefs.readMenus = it }
+            .let(root::addView)
+        readSwitch("Picture descriptions", "Image descriptions, logos and photo credits", prefs.readPictures) { prefs.readPictures = it }
+            .let(root::addView)
+        readSwitch("Dates and article details", "Dates, Published or Updated times, comment counts, read times", prefs.readDetails) { prefs.readDetails = it }
+            .let(root::addView)
+        readSwitch("Text above the main story", "Short lines before the first full sentence, such as a byline or an email's banner", prefs.readLeadIn) { prefs.readLeadIn = it }
+            .let(root::addView)
 
         // --- Test report ----------------------------------------------------------------------
         root.addView(heading("Test report"))
@@ -106,6 +109,23 @@ class SettingsActivity : WafflrScreen() {
         })
 
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    /** A "read this too" switch with a one-line explanation under it. */
+    private fun readSwitch(title: String, detail: String, on: Boolean, set: (Boolean) -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
+        addView(Switch(this@SettingsActivity).apply {
+            text = title
+            textSize = 16f
+            isChecked = on
+            setOnCheckedChangeListener { _, value -> set(value) }
+        })
+        addView(TextView(this@SettingsActivity).apply {
+            text = detail
+            textSize = 13f
+            alpha = 0.7f
+        })
     }
 
     override fun onResume() {
