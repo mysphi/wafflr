@@ -59,7 +59,16 @@ class Highlighter(
     private var locating = false            // looking for the paragraph in a screenshot
     private var locateRetryAt = 0L
     private var scrollSeq = 0               // counts page movements, so a screenshot taken before one is ignored
-    private var predicted: Rect? = null     // where scrolling put the box, to compare with where the text really is
+    private var needsLocate = false         // find the paragraph in a screenshot once the page settles
+    /** Whether the app's places for its text are right after scrolling: null until checked against a screenshot. */
+    private var appTrusted: Boolean? = null
+
+    /** Hides everything (while the phone is locked). */
+    var suppressed = false
+        set(value) {
+            field = value
+            if (value) main.post { hide() }
+        }
 
     private var wordKey = -1                // sentence index * 10000 + word index, for the current underline
     private var wordRects: List<RectF> = emptyList()
@@ -107,6 +116,8 @@ class Highlighter(
             trustScrolls = true
             movedUnchecked = false
             scrolledThisRead = false
+            needsLocate = false
+            appTrusted = null
             ocrSpot = null
             ocrState = OCR_NONE
             main.removeCallbacks(ticker)
@@ -121,34 +132,39 @@ class Highlighter(
     /**
      * The page scrolled by [dx], [dy] pixels (-1 or 0,0 when the app doesn't say) inside [area],
      * or the window changed.
+     *
+     * The first time, the box hides and the paragraph is found in a screenshot once the page
+     * settles; that also shows whether the app's own places for its text can be trusted. If they
+     * can, later scrolls move the box along live; if not (Gmail's emails), the box hides during
+     * each scroll and is found from a screenshot again afterwards.
      */
     fun pageMoved(dx: Int = 0, dy: Int = 0, area: Rect? = null) {
         if (state == ReaderState.IDLE) return
         val s = spot ?: return
-        val now = SystemClock.uptimeMillis()
-        scrollSeq++
-        if (s.spot.node == null) {
-            lostForThisRead = true
-            followUntil = now + FOLLOW_MS // look for it again once the page settles
-            hide()
-            return
-        }
-        val known = (dx != 0 || dy != 0) && dx != -1 && dy != -1
         val b = box
         if (b != null && area != null && !Rect.intersects(area, b)) return // another part of the screen scrolled
+        val now = SystemClock.uptimeMillis()
+        scrollSeq++
         scrolledThisRead = true
-        if (known && b != null) {
-            lastScroll = now
-            movedUnchecked = true
-            if (trustScrolls) {
+        val known = (dx != 0 || dy != 0) && dx != -1 && dy != -1
+        if (known) lastScroll = now else followUntil = now + FOLLOW_MS
+        if (s.spot.node == null) {
+            // Text read from a picture: find it again once the page settles.
+            lostForThisRead = true
+            box = null
+            needsLocate = true
+            hide()
+        } else if (appTrusted == true && trustScrolls) {
+            if (known && b != null) {
                 box = Rect(b).apply { offset(-dx, -dy) }
                 wordRects = wordRects.map { RectF(it).apply { offset(-dx.toFloat(), -dy.toFloat()) } }
+                movedUnchecked = true
                 if (added) show(box!!, wordRects)
-            } else {
-                hide() // this app's distances can't be trusted: show the box again once it settles
             }
         } else {
-            followUntil = now + FOLLOW_MS
+            box = null
+            needsLocate = true
+            hide()
         }
         needsCheck = true
         main.removeCallbacks(ticker)
@@ -156,7 +172,7 @@ class Highlighter(
     }
 
     private fun tick() {
-        if (!prefs.highlight || state == ReaderState.PREPARING) { hide(); return }
+        if (suppressed || !prefs.highlight || state == ReaderState.PREPARING) { hide(); return }
         val now = reader.nowPlaying() ?: return
         val s = now.spot ?: run { hide(); return }
         val node = s.spot.node
@@ -167,25 +183,25 @@ class Highlighter(
             wordKey = -1
             wordRects = emptyList()
             if (!samePiece) {
-                charsUnsupported = false
+                charsUnsupported = appTrusted == false
                 live = node
-                box = if (node == null) s.spot.rect else null
+                box = if (node == null && !lostForThisRead) s.spot.rect else null
                 needsCheck = node != null
                 movedUnchecked = false
                 unseen = 0
+                // After scrolling, a new paragraph's place has to be found the same way.
+                needsLocate = scrolledThisRead && (node == null || appTrusted != true)
             }
         }
         val scrolling = t - lastScroll < SETTLE_MS
-        if (scrolling && !trustScrolls) { hide(); return }
         val settled = !scrolling && t >= followUntil
 
-        if (node == null) {
-            // Text read from a picture: once the page moves, find it again in a new screenshot.
-            if (lostForThisRead) {
-                box = null
-                if (settled) locate(s, null, now.sentence)
-            }
-        } else if (!scrolling && (needsCheck || t < followUntil || t - lastCheck > RECHECK_MS)) {
+        if (needsLocate) {
+            box = null
+            if (settled) locate(s, live ?: node, now.sentence)
+        } else if (node != null && appTrusted != false && !scrolling &&
+            (needsCheck || t < followUntil || t - lastCheck > RECHECK_MS)
+        ) {
             // Check the box against the app, except mid-scroll (apps report stale places then).
             needsCheck = false
             lastCheck = t
@@ -195,36 +211,28 @@ class Highlighter(
                 refind(node)?.let { n -> check(n)?.takeIf { it != OFF_SCREEN }?.let { live = n; found = it } }
             }
             val f = found?.takeIf { it != OFF_SCREEN }
-            if (f != null && movedUnchecked && box != null &&
-                (kotlin.math.abs(box!!.top - f.top) > 24 * density || kotlin.math.abs(box!!.left - f.left) > 24 * density)
-            ) {
-                trustScrolls = false // the app's scroll distances don't match where it says its text is
-            }
-            val afterScroll = movedUnchecked || (box == null && scrolledThisRead)
+            val b0 = box
             when {
-                // After a scroll in an app whose positions can't be trusted, or that won't say
-                // where its text went: hide the box (better none than a wrong one) and find the
-                // text in a screenshot instead.
-                afterScroll && (f == null || !trustScrolls) -> {
-                    if (movedUnchecked) predicted = box
+                f != null && movedUnchecked && b0 != null &&
+                    (kotlin.math.abs(b0.top - f.top) > 24 * density || kotlin.math.abs(b0.left - f.left) > 24 * density) -> {
+                    // Scrolling and the app disagree about where the text is: settle it with a screenshot.
+                    trustScrolls = false
                     box = null
-                    movedUnchecked = false
-                    unseen = 0
-                    if (settled) locate(s, node, now.sentence) else needsCheck = true
+                    needsLocate = true
                 }
                 f != null -> {
                     unseen = 0
-                    movedUnchecked = false
                     if (f != box) {
-                        val old = box
                         box = f
                         wordKey = -1 // look the word up again at the new place
-                        if (old != null) shiftOcr(old, f)
+                        if (b0 != null) shiftOcr(b0, f)
                     }
                 }
-                found == OFF_SCREEN -> if (++unseen >= 3) { box = null; if (scrolledThisRead) locate(s, node, now.sentence) }
-                box == null && !scrolledThisRead -> box = Rect(s.spot.rect)
+                found == OFF_SCREEN -> if (++unseen >= 3) { box = null; if (scrolledThisRead) needsLocate = true }
+                scrolledThisRead -> { box = null; needsLocate = true }
+                box == null -> box = Rect(s.spot.rect)
             }
+            movedUnchecked = false
         }
         val b = box ?: run { hide(); return }
 
@@ -335,20 +343,25 @@ class Highlighter(
                     return@post
                 }
                 val (b, inside) = placed
-                predicted?.let { p ->
-                    if (kotlin.math.abs(p.top - b.top) > 48 * density) trustScrolls = false
-                }
-                predicted = null
+                needsLocate = false
                 lostForThisRead = false
                 movedUnchecked = false
-                box = b
                 lastCheck = SystemClock.uptimeMillis()
+                // Does the app agree about where its text is? Its paragraph box starts at or
+                // just above the first visible line found here.
+                val n = live
+                if (n != null && appTrusted == null) {
+                    val app = check(n)?.takeIf { it != OFF_SCREEN }
+                    appTrusted = app != null && kotlin.math.abs(app.top - b.top) <= 40 * density &&
+                        kotlin.math.abs(app.left - b.left) <= 40 * density
+                }
+                box = b
                 ocrSpot = s
                 ocrBox = b
                 ocrWords = inside.map { (w, r) -> w to RectF(r).apply { offset(-b.left.toFloat(), -b.top.toFloat()) } }
                 ocrState = OCR_DONE
                 alignedFor = -1
-                charsUnsupported = true // the app's own word places are stale too
+                if (n == null || appTrusted == false) charsUnsupported = true // the app's word places are stale too
                 wordKey = -1
                 main.removeCallbacks(ticker)
                 main.post(ticker)

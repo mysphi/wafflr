@@ -1,7 +1,11 @@
 package app.wafflr
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Rect
 import android.content.SharedPreferences
 import android.os.Handler
@@ -21,15 +25,47 @@ class WafflrService : AccessibilityService() {
         if (key == "bubble") updateBubble()
     }
 
+    /**
+     * True while the phone is locked (or its screen is off). Nothing of Wafflr's shows over the
+     * lock screen then, so it can't be used to get round the lock.
+     */
+    private var locked = false
+    private val lockWatcher = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            locked = when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> true
+                Intent.ACTION_USER_PRESENT -> false
+                else -> isLockedNow()
+            }
+            updateBubble()
+            highlighter?.suppressed = locked
+            if (locked) selector?.dismiss()
+        }
+    }
+
+    private fun isLockedNow(): Boolean =
+        getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+
     override fun onServiceConnected() {
         instance = this
         app.prefs.prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        locked = isLockedNow()
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(lockWatcher, filter, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(lockWatcher, filter)
         updateBubble()
-        highlighter = Highlighter(this, app.prefs, app.reader) { rect, done -> areaReader.readWords(rect, done) }.also { app.reader.addListener(it) }
+        highlighter = Highlighter(this, app.prefs, app.reader) { rect, done -> areaReader.readWords(rect, done) }.also {
+            it.suppressed = locked
+            app.reader.addListener(it)
+        }
     }
 
     private fun updateBubble() {
-        if (app.prefs.bubbleEnabled) {
+        if (app.prefs.bubbleEnabled && !locked) {
             if (bubble == null) {
                 bubble = FloatingBubble(this, app.prefs, app.reader, ::onBubbleTap, ::selectArea, ::openApp).also { it.show() }
             }
@@ -83,6 +119,7 @@ class WafflrService : AccessibilityService() {
     }
 
     fun readScreen() {
+        if (locked || isLockedNow()) return // never read what's behind the lock screen
         val p = app.prefs
         val found = try { ScreenText.read(this, p.readOptions) } catch (_: Throwable) { null }
         if (found != null && found.hasSentence) {
@@ -155,6 +192,7 @@ class WafflrService : AccessibilityService() {
 
     override fun onDestroy() {
         app.prefs.prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        try { unregisterReceiver(lockWatcher) } catch (_: Throwable) {}
         selector?.dismiss()
         selector = null
         bubble?.hide()

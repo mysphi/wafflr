@@ -40,6 +40,11 @@ class ReadTile : TileService(), ReaderListener {
             reader.stop()
             return
         }
+        // From the lock screen, Android asks for the phone to be unlocked first.
+        if (isLocked) unlockAndRun { readUnderShade() } else readUnderShade()
+    }
+
+    private fun readUnderShade() {
         // Close the shade first so the screen underneath is what gets read.
         val intent = Intent(this, TileReadActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= 34) {
