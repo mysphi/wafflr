@@ -54,7 +54,9 @@ class AreaSelector(
     private val root = FrameLayout(context).apply {
         addView(canvasView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         addView(bar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-            topMargin = dp(48)
+            // Just below the status bar, so the buttons cover as little of the page as possible.
+            val statusBar = wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top
+            topMargin = maxOf(0, statusBar - dp(4))
         })
     }
 

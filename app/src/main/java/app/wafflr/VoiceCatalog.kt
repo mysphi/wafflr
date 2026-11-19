@@ -28,10 +28,25 @@ data class Voice(
 
 object VoiceCatalog {
     val piperAlan = VoicePack("piper-alan", EngineKind.PIPER, "vits-piper-en_GB-alan-medium", bundled = true, sizeNote = "built in")
-    val piperJenny = VoicePack("piper-jenny", EngineKind.PIPER, "vits-piper-en_GB-jenny_dioco-medium", bundled = false, sizeNote = "about 60 MB download")
-    val kokoro = VoicePack("kokoro-v1", EngineKind.KOKORO, "kokoro-multi-lang-v1_0", bundled = false, sizeNote = "large download, several hundred MB, use Wi-Fi")
+    val piperJenny = piper("jenny", "en_GB-jenny_dioco-medium")
+    val piperAlba = piper("alba", "en_GB-alba-medium")
+    val piperCori = piper("cori", "en_GB-cori-medium")
+    val piperNorthern = piper("northern-male", "en_GB-northern_english_male-medium")
+    val piperSouthern = piper("southern-female", "en_GB-southern_english_female-low")
+    val piperAmy = piper("amy", "en_US-amy-medium")
+    val piperKristin = piper("kristin", "en_US-kristin-medium")
+    val piperRyan = piper("ryan", "en_US-ryan-medium")
+    val piperJoe = piper("joe", "en_US-joe-medium")
+    val kokoro = VoicePack("kokoro-v1", EngineKind.KOKORO, "kokoro-multi-lang-v1_0", bundled = false, sizeNote = "about 330 MB download, use Wi-Fi; slower to start")
 
-    val packs = listOf(piperAlan, piperJenny, kokoro)
+    val packs = listOf(
+        piperAlan, piperJenny, piperAlba, piperCori, piperNorthern, piperSouthern,
+        piperAmy, piperKristin, piperRyan, piperJoe, kokoro,
+    )
+
+    /** Each Piper voice is its own small download (one voice per pack). */
+    private fun piper(id: String, name: String) =
+        VoicePack("piper-$id", EngineKind.PIPER, "vits-piper-$name", bundled = false, sizeNote = "about 65 MB download")
 
     private const val GB = "lexicon-gb-en.txt"
     private const val US = "lexicon-us-en.txt"
@@ -42,6 +57,14 @@ object VoiceCatalog {
     val voices = listOf(
         Voice("piper-alan", "Piper · Alan (British male)", piperAlan),
         Voice("piper-jenny", "Piper · Jenny (British female)", piperJenny),
+        Voice("piper-alba", "Piper · Alba (Scottish female)", piperAlba),
+        Voice("piper-cori", "Piper · Cori (British female)", piperCori),
+        Voice("piper-northern-male", "Piper · Northern English male", piperNorthern),
+        Voice("piper-southern-female", "Piper · Southern English female (lighter quality)", piperSouthern),
+        Voice("piper-amy", "Piper · Amy (American female)", piperAmy),
+        Voice("piper-kristin", "Piper · Kristin (American female)", piperKristin),
+        Voice("piper-ryan", "Piper · Ryan (American male)", piperRyan),
+        Voice("piper-joe", "Piper · Joe (American male)", piperJoe),
         Voice("kokoro-george", "Kokoro · George (British male)", kokoro, sid = 26, lexicon = GB, lang = ""),
         Voice("kokoro-daniel", "Kokoro · Daniel (British male)", kokoro, sid = 24, lexicon = GB, lang = ""),
         Voice("kokoro-emma", "Kokoro · Emma (British female)", kokoro, sid = 21, lexicon = GB, lang = ""),
