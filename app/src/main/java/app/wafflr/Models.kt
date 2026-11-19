@@ -25,6 +25,13 @@ class Models(private val store: VoiceStore) {
     fun generate(model: LoadedModel, text: String, sid: Int, speed: Float): FloatArray =
         model.tts.generate(text = text, sid = sid, speed = speed).samples
 
+    /** Frees whatever model is loaded (to save memory and battery when Wafflr is idle). */
+    @Synchronized
+    fun releaseAll() {
+        current?.tts?.release()
+        current = null
+    }
+
     /** Frees the loaded model if it comes from [pack], e.g. before its files are removed. */
     @Synchronized
     fun release(pack: VoicePack) {

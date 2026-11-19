@@ -22,7 +22,8 @@ data class ReadOptions(
 
 /** What Wafflr found on screen, and what it left out. */
 class ScreenRead(
-    val text: String,
+    /** Each piece of text to read, with where it is on screen. */
+    val pieces: List<Pair<String, android.graphics.Rect>>,
     /** Pieces of text skipped as menus, toolbars, buttons, tabs or navigation. */
     val skippedControls: Int,
     val skippedHeadings: Int,
@@ -31,6 +32,8 @@ class ScreenRead(
     /** True when everything looked like menus, so Wafflr read it all rather than nothing. */
     val fellBack: Boolean,
 ) {
+    val text: String get() = pieces.joinToString("\n") { it.first }
+
     fun summary(): String = buildString {
         append("whole screen")
         val bits = mutableListOf<String>()
@@ -93,23 +96,24 @@ object ScreenText {
     private const val NO_TAP = 1000
 
     fun read(service: AccessibilityService, options: ReadOptions): ScreenRead {
-        val root = targetRoot(service) ?: return ScreenRead("", 0, 0, 0, false)
+        val root = targetRoot(service) ?: return ScreenRead(emptyList(), 0, 0, 0, false)
         val rootBounds = android.graphics.Rect().also { root.getBoundsInScreen(it) }
         val filtered = Collector(filter = true, options = options, page = rootBounds)
             .also { it.collect(root, 0, null, NO_TAP) }
         val tidied = TextTidy.tidy(filtered.parts, options)
-        val text = join(tidied.lines)
-        if (text.isNotBlank()) {
-            return ScreenRead(text, filtered.skippedControls, filtered.skippedHeadings, filtered.skippedImages + tidied.skipped, false)
+        val pieces = join(tidied.kept.map { filtered.parts[it] to filtered.rects[it] })
+        if (pieces.isNotEmpty()) {
+            return ScreenRead(pieces, filtered.skippedControls, filtered.skippedHeadings, filtered.skippedImages + tidied.skipped, false)
         }
         val everything = Collector(filter = false, options = options, page = rootBounds).also { it.collect(root, 0, null, NO_TAP) }
-        return ScreenRead(join(everything.parts), 0, 0, 0, everything.parts.isNotEmpty())
+        val all = join(everything.parts.indices.map { everything.parts[it] to everything.rects[it] })
+        return ScreenRead(all, 0, 0, 0, all.isNotEmpty())
     }
 
     /** Drops exact repeats (e.g. a title shown twice) while keeping order. */
-    private fun join(parts: List<String>): String {
+    private fun join(parts: List<Pair<String, android.graphics.Rect>>): List<Pair<String, android.graphics.Rect>> {
         val seen = HashSet<String>()
-        return parts.filter { seen.add(it) }.joinToString("\n")
+        return parts.filter { it.first.isNotBlank() && seen.add(it.first) }
     }
 
     /** The app window the user is looking at, never Wafflr's own floating button. */
@@ -131,6 +135,8 @@ object ScreenText {
         private val skipPictures = filter && !options.pictures
         private val skipHeadings = filter && !options.headings
         val parts = mutableListOf<String>()
+        /** Where each of [parts] is on screen. */
+        val rects = mutableListOf<android.graphics.Rect>()
         var skippedControls = 0
         var skippedHeadings = 0
         var skippedImages = 0
@@ -159,7 +165,10 @@ object ScreenText {
                     skipHeadings && isHeading(node) -> skippedHeadings++
                     skipMenus && isShortTapLabel(node, text, inTap) -> skippedControls++
                     skipMenus && isBottomBarLabel(node, text, page) -> skippedControls++
-                    else -> parts += text
+                    else -> {
+                        parts += text
+                        rects += android.graphics.Rect().also { node.getBoundsInScreen(it) }
+                    }
                 }
                 context = text
             }

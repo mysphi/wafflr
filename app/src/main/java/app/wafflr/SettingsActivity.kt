@@ -87,6 +87,15 @@ class SettingsActivity : WafflrScreen() {
         readSwitch("Text above the main story", "Short lines before the first full sentence, such as a byline or an email's banner", prefs.readLeadIn) { prefs.readLeadIn = it }
             .let(root::addView)
 
+        // --- While reading -------------------------------------------------------------------------
+        root.addView(heading("While reading"))
+        readSwitch("Highlight what's being read", "A soft yellow box around the paragraph or area being read", prefs.highlight) { prefs.highlight = it }
+            .let(root::addView)
+        root.addView(body(
+            "Headphone buttons and the lock screen can pause, skip and stop. For a quick start, add the " +
+            "Wafflr tile to Quick Settings: pull down the shade, tap the pencil, and drag Wafflr in."
+        ))
+
         // --- Test report ----------------------------------------------------------------------
         root.addView(heading("Test report"))
         crash = mono("")

@@ -18,6 +18,8 @@ data class ReaderStatus(
     val index: Int = 0,
     val total: Int = 0,
     val message: String = "",
+    /** Where on screen the text being read is, if known, for the highlight. */
+    val region: android.graphics.Rect? = null,
 )
 
 /** Timings from one read, used to compare voices on the phone. */
@@ -75,9 +77,37 @@ class Reader(private val context: Context, private val models: Models) {
 
     val isActive: Boolean get() = status.state != ReaderState.IDLE
 
-    fun read(text: String, voice: Voice, speed: Float, threads: Int, source: String, tuning: Tuning = Tuning()) {
-        stop()
+    /** Reads [text]. If [area] is given (a drawn area), it is highlighted for the whole read. */
+    fun read(
+        text: String, voice: Voice, speed: Float, threads: Int, source: String,
+        tuning: Tuning = Tuning(), area: android.graphics.Rect? = null,
+    ) {
         val sentences = TextSplitter.split(text)
+        start(sentences, area?.let { a -> List(sentences.size) { a } }, voice, speed, threads, source, tuning, text.length)
+    }
+
+    /**
+     * Reads pieces of on-screen text, each with where it is on screen, so the piece being read
+     * can be highlighted.
+     */
+    fun readPieces(
+        pieces: List<Pair<String, android.graphics.Rect?>>, voice: Voice, speed: Float, threads: Int,
+        source: String, tuning: Tuning = Tuning(),
+    ) {
+        val sentences = mutableListOf<String>()
+        val regions = mutableListOf<android.graphics.Rect?>()
+        for ((text, rect) in pieces) {
+            for (s in TextSplitter.split(text)) { sentences += s; regions += rect }
+        }
+        start(sentences, regions, voice, speed, threads, source, tuning, pieces.sumOf { it.first.length })
+    }
+
+    private fun start(
+        sentences: List<String>, regions: List<android.graphics.Rect?>?, voice: Voice, speed: Float,
+        threads: Int, source: String, tuning: Tuning, chars: Int,
+    ) {
+        stop()
+        main.removeCallbacks(releaseWhenIdle)
         if (sentences.isEmpty()) {
             publishError("There is no text to read.")
             return
@@ -85,7 +115,7 @@ class Reader(private val context: Context, private val models: Models) {
         // Note non-default tuning in the test report.
         val label = if (tuning == Tuning()) source
             else "$source, pitch %.2f, expression %.2f".format(tuning.pitch, tuning.expression)
-        val s = Session(sentences, voice, speed, threads, label, text.length, tuning)
+        val s = Session(sentences, voice, speed, threads, label, chars, tuning, regions)
         session = s
         s.start()
     }
@@ -108,8 +138,17 @@ class Reader(private val context: Context, private val models: Models) {
         main.post { listeners.forEach { it.onStatus(status) } }
     }
 
-    private fun publish(st: ReaderStatus, from: Session) {
-        if (session !== from && st.state != ReaderState.IDLE) return
+    /** Frees the voice's memory after a few idle minutes; the next read loads it again. */
+    private val releaseWhenIdle = Runnable { if (!isActive) models.releaseAll() }
+
+    private fun publish(status0: ReaderStatus, from: Session) {
+        if (session !== from && status0.state != ReaderState.IDLE) return
+        val playing = status0.state == ReaderState.PLAYING || status0.state == ReaderState.PAUSED
+        val st = if (playing && from.regions != null) status0.copy(region = from.regions.getOrNull(status0.index)) else status0
+        if (st.state == ReaderState.IDLE) {
+            main.removeCallbacks(releaseWhenIdle)
+            main.postDelayed(releaseWhenIdle, IDLE_RELEASE_MS)
+        }
         status = st
         main.post { listeners.forEach { it.onStatus(st) } }
     }
@@ -126,6 +165,7 @@ class Reader(private val context: Context, private val models: Models) {
         val source: String,
         val chars: Int,
         val tuning: Tuning,
+        val regions: List<android.graphics.Rect?>?,
     ) {
         private val lock = Object()
         private var cur = 0
@@ -359,6 +399,7 @@ class Reader(private val context: Context, private val models: Models) {
     companion object {
         private const val BLOCK = 2048
         private const val LOOKAHEAD = 3
+        private const val IDLE_RELEASE_MS = 3 * 60_000L
         private val attributes: AudioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

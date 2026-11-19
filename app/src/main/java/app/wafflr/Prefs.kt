@@ -49,6 +49,11 @@ class Prefs(context: Context) {
 
     val tuning: Tuning get() = Tuning(pitch, expression)
 
+    /** Highlight the paragraph or area being read. */
+    var highlight: Boolean
+        get() = sp.getBoolean("highlight", true)
+        set(v) = sp.edit().putBoolean("highlight", v).apply()
+
     var bubbleEnabled: Boolean
         get() = sp.getBoolean("bubble", true)
         set(v) = sp.edit().putBoolean("bubble", v).apply()

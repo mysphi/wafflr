@@ -11,6 +11,8 @@ class WafflrApp : Application() {
         private set
     lateinit var prefs: Prefs
         private set
+    lateinit var mediaControls: MediaControls
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -20,6 +22,7 @@ class WafflrApp : Application() {
         voices = VoiceStore(this)
         models = Models(voices)
         reader = Reader(this, models)
+        mediaControls = MediaControls(this, reader)
         Thread({
             try { voices.housekeeping() } catch (_: Throwable) {}
         }, "voice-housekeeping").start()

@@ -14,6 +14,7 @@ import android.widget.Toast
  */
 class WafflrService : AccessibilityService() {
     private var bubble: FloatingBubble? = null
+    private var highlighter: Highlighter? = null
     private val app get() = WafflrApp.instance
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "bubble") updateBubble()
@@ -23,6 +24,7 @@ class WafflrService : AccessibilityService() {
         instance = this
         app.prefs.prefs.registerOnSharedPreferenceChangeListener(prefListener)
         updateBubble()
+        highlighter = Highlighter(this, app.prefs).also { app.reader.addListener(it) }
     }
 
     private fun updateBubble() {
@@ -71,7 +73,7 @@ class WafflrService : AccessibilityService() {
                     Toast.makeText(this, "Wafflr couldn't find any text in that area.", Toast.LENGTH_SHORT).show()
                 } else {
                     val p = app.prefs
-                    app.reader.read(text, p.voice, p.speed, p.threads, "drawn area", p.tuning)
+                    app.reader.read(text, p.voice, p.speed, p.threads, "drawn area", p.tuning, area = area.bounds)
                 }
             }.onFailure { e ->
                 Toast.makeText(this, e.message ?: "Couldn't read that area.", Toast.LENGTH_LONG).show()
@@ -82,14 +84,20 @@ class WafflrService : AccessibilityService() {
     fun readScreen() {
         val p = app.prefs
         val found = try { ScreenText.read(this, p.readOptions) } catch (_: Throwable) { null }
-        if (found == null || found.text.isBlank()) {
+        if (found == null || found.pieces.isEmpty()) {
             Toast.makeText(this, "Wafflr couldn't find any text to read here.", Toast.LENGTH_SHORT).show()
             return
         }
-        app.reader.read(found.text, p.voice, p.speed, p.threads, found.summary(), p.tuning)
+        app.reader.readPieces(found.pieces, p.voice, p.speed, p.threads, found.summary(), p.tuning)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // The page scrolled or changed under the highlight: it would point at the wrong text.
+        if (event.packageName?.toString() == packageName) return
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_SCROLLED, AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> highlighter?.pageMoved()
+        }
+    }
 
     override fun onInterrupt() {
         app.reader.stop()
@@ -101,6 +109,8 @@ class WafflrService : AccessibilityService() {
         selector = null
         bubble?.hide()
         bubble = null
+        highlighter?.let { app.reader.removeListener(it); it.hide() }
+        highlighter = null
         app.reader.stop()
         if (instance === this) instance = null
         super.onDestroy()
