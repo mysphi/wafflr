@@ -52,6 +52,10 @@ class Highlighter(
     private var unseen = 0                  // checks in a row that found the text off screen
     private var lastScroll = 0L             // last scroll whose distance was known
     private var followUntil = 0L            // re-check every frame until then (scrolls of unknown distance)
+    private var live: AccessibilityNodeInfo? = null // the current paragraph's node, found again if the app replaced it
+    private var trustScrolls = true         // the app's scroll distances match where its text ends up
+    private var movedUnchecked = false      // the box was moved by scrolls and not yet checked
+    private var scrolledThisRead = false
 
     private var wordKey = -1                // sentence index * 10000 + word index, for the current underline
     private var wordRects: List<RectF> = emptyList()
@@ -95,6 +99,10 @@ class Highlighter(
         if (was == ReaderState.IDLE && state != ReaderState.IDLE) {
             lostForThisRead = false
             spot = null
+            live = null
+            trustScrolls = true
+            movedUnchecked = false
+            scrolledThisRead = false
             ocrSpot = null
             ocrState = OCR_NONE
             main.removeCallbacks(ticker)
@@ -121,13 +129,18 @@ class Highlighter(
         val now = SystemClock.uptimeMillis()
         val known = (dx != 0 || dy != 0) && dx != -1 && dy != -1
         val b = box
+        if (b != null && area != null && !Rect.intersects(area, b)) return // another part of the screen scrolled
+        scrolledThisRead = true
         if (known && b != null) {
-            // Only scrolls of the part of the screen holding the text count.
-            if (area != null && !Rect.intersects(area, b)) return
-            box = Rect(b).apply { offset(-dx, -dy) }
-            wordRects = wordRects.map { RectF(it).apply { offset(-dx.toFloat(), -dy.toFloat()) } }
             lastScroll = now
-            if (added) show(box!!, wordRects)
+            movedUnchecked = true
+            if (trustScrolls) {
+                box = Rect(b).apply { offset(-dx, -dy) }
+                wordRects = wordRects.map { RectF(it).apply { offset(-dx.toFloat(), -dy.toFloat()) } }
+                if (added) show(box!!, wordRects)
+            } else {
+                hide() // this app's distances can't be trusted: show the box again once it settles
+            }
         } else {
             followUntil = now + FOLLOW_MS
         }
@@ -149,8 +162,10 @@ class Highlighter(
             wordRects = emptyList()
             if (!samePiece) {
                 charsUnsupported = false
+                live = node
                 box = if (node == null) s.spot.rect else null
                 needsCheck = node != null
+                movedUnchecked = false
                 unseen = 0
             }
         }
@@ -158,14 +173,32 @@ class Highlighter(
 
         // Check the box against the app, except mid-scroll (apps report stale places then).
         val scrolling = t - lastScroll < SETTLE_MS
+        if (scrolling && !trustScrolls) { hide(); return }
         if (node != null && !scrolling && (needsCheck || t < followUntil || t - lastCheck > RECHECK_MS)) {
             needsCheck = false
             lastCheck = t
-            when (val found = check(node)) {
-                null -> {} // the app didn't answer: keep the box where it is
+            var found = live?.let { check(it) }
+            if (found == null) {
+                // The app may have replaced the paragraph's node (web pages and lists do): find it again.
+                refind(node)?.let { n -> check(n)?.let { live = n; found = it } }
+            }
+            when (val f = found) {
+                null -> when {
+                    // Can't confirm where the scrolled text went: better no box than a wrong one.
+                    movedUnchecked -> { box = null; movedUnchecked = false }
+                    box == null && !scrolledThisRead -> box = Rect(s.spot.rect)
+                }
                 OFF_SCREEN -> if (++unseen >= 3) { box = null; hide(); return }
                 else -> {
                     unseen = 0
+                    val b0 = box
+                    if (movedUnchecked && b0 != null &&
+                        (kotlin.math.abs(b0.top - f.top) > 24 * density || kotlin.math.abs(b0.left - f.left) > 24 * density)
+                    ) {
+                        trustScrolls = false // the app's scroll distances don't match its text
+                    }
+                    movedUnchecked = false
+                    val found = f
                     if (found != box) {
                         val old = box
                         box = found
@@ -177,7 +210,7 @@ class Highlighter(
         }
         val b = box ?: run { hide(); return }
 
-        if (prefs.underlineWords) underline(now, s, node, b, scrolling) else wordRects = emptyList()
+        if (prefs.underlineWords) underline(now, s, live ?: node, b, scrolling) else wordRects = emptyList()
         show(b, wordRects)
     }
 
@@ -255,6 +288,23 @@ class Highlighter(
         if (kotlin.math.abs(old.width() - new.width()) > 4 || kotlin.math.abs(old.height() - new.height()) > 4) {
             ocrState = OCR_NONE
         }
+    }
+
+    /** Looks for the paragraph's text again in the window, nearest to where the box was. */
+    private fun refind(old: AccessibilityNodeInfo): AccessibilityNodeInfo? = try {
+        val text = old.text?.toString()
+        val root = (context as? android.accessibilityservice.AccessibilityService)?.rootInActiveWindow
+        if (text.isNullOrBlank() || root == null) null else {
+            val near = box ?: spot?.spot?.rect
+            root.findAccessibilityNodeInfosByText(text.trim().take(60))
+                .filter { it.text?.toString() == text && it.isVisibleToUser }
+                .minByOrNull { n ->
+                    val r = Rect().also { n.getBoundsInScreen(it) }
+                    if (near == null) 0 else kotlin.math.abs(r.top - near.top) + kotlin.math.abs(r.left - near.left)
+                }
+        }
+    } catch (_: Throwable) {
+        null
     }
 
     /** The node's place now; [OFF_SCREEN] if it has scrolled away; null if the app didn't answer. */
