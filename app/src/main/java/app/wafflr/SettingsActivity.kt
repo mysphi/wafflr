@@ -56,6 +56,16 @@ class SettingsActivity : WafflrScreen() {
             setPadding(0, (12 * dp).toInt(), 0, (12 * dp).toInt())
         }
         root.addView(bubbleSwitch)
+        root.addView(intSlider("Icon size", FloatingBubble.MIN_SIZE, FloatingBubble.MAX_SIZE, 2, prefs.bubbleSize,
+            { if (it == 38) "normal" else if (it < 38) "smaller" else "larger" }) { prefs.bubbleSize = it })
+        root.addView(intSlider("Gap from the screen edge", 0, FloatingBubble.MAX_EDGE, 2, prefs.bubbleEdge,
+            { if (it == 0) "touching the edge" else "$it dp" }) { prefs.bubbleEdge = it })
+        readSwitch(
+            "Tuck into the edge when not in use",
+            "After a few seconds the icon slides mostly out of sight. Tap what's showing to bring it back. " +
+                "You can also drag it into the edge to tuck it away at any time.",
+            prefs.bubbleTuck,
+        ) { prefs.bubbleTuck = it }.let(root::addView)
         shortcutWarning = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(body(
@@ -119,6 +129,28 @@ class SettingsActivity : WafflrScreen() {
         })
 
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    /** A labelled slider for a whole number, saved when let go (the floating icon rebuilds then). */
+    private fun intSlider(
+        title: String, min: Int, max: Int, step: Int, value: Int,
+        describe: (Int) -> String, set: (Int) -> Unit,
+    ) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, (8 * dp).toInt(), 0, (4 * dp).toInt())
+        val label = TextView(this@SettingsActivity).apply { textSize = 16f }
+        fun show(v: Int) { label.text = "$title: ${describe(v)}" }
+        show(value)
+        addView(label)
+        addView(android.widget.SeekBar(this@SettingsActivity).apply {
+            this.max = (max - min) / step
+            progress = ((value - min) / step).coerceIn(0, this.max)
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, fromUser: Boolean) = show(min + p * step)
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(s: android.widget.SeekBar?) { set(min + progress * step) }
+            })
+        })
     }
 
     /** A "read this too" switch with a one-line explanation under it. */

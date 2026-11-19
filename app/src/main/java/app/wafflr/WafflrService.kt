@@ -22,7 +22,11 @@ class WafflrService : AccessibilityService() {
     private var highlighter: Highlighter? = null
     private val app get() = WafflrApp.instance
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "bubble") updateBubble()
+        when (key) {
+            "bubble" -> updateBubble()
+            // Look changed: rebuild the floating icon.
+            "bubble_size", "bubble_edge", "bubble_tuck" -> { bubble?.hide(); bubble = null; updateBubble() }
+        }
     }
 
     /**

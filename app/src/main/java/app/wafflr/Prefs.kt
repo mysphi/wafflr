@@ -69,6 +69,21 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean("bubble_right", v).apply()
 
     /** Distance of the floating logo from the top of the screen, in pixels (-1 = default). */
+    /** Size of the floating Wafflr icon, in dp. */
+    var bubbleSize: Int
+        get() = sp.getInt("bubble_size", 38)
+        set(v) = sp.edit().putInt("bubble_size", v).apply()
+
+    /** Gap between the floating icon and the edge of the screen, in dp. */
+    var bubbleEdge: Int
+        get() = sp.getInt("bubble_edge", 13)
+        set(v) = sp.edit().putInt("bubble_edge", v).apply()
+
+    /** Tuck the floating icon mostly into the screen edge when it isn't being used. */
+    var bubbleTuck: Boolean
+        get() = sp.getBoolean("bubble_tuck", false)
+        set(v) = sp.edit().putBoolean("bubble_tuck", v).apply()
+
     var bubbleY: Int
         get() = sp.getInt("bubble_top", -1)
         set(v) = sp.edit().putInt("bubble_top", v).apply()

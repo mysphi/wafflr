@@ -74,6 +74,16 @@ class Highlighter(
     private var wordRects: List<RectF> = emptyList()
     private var charsUnsupported = false    // the app can't say where its characters are
 
+    /**
+     * Where each character of the sentence being read is, asked of the app once per sentence (in
+     * the background, since some apps such as Chrome are slow to answer), relative to the
+     * paragraph's box at the time, so it can follow the box as it moves.
+     */
+    private class SentenceChars(val index: Int, val at: Rect, val chars: Array<RectF?>)
+    private var sentenceChars: SentenceChars? = null
+    private var charsFetching = -1          // sentence index being fetched
+    private val background = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     // Words found from a screenshot, for apps that can't say where their words are.
     private var ocrSpot: SentenceSpot? = null
     private var ocrState = OCR_NONE
@@ -120,6 +130,8 @@ class Highlighter(
             appTrusted = null
             ocrSpot = null
             ocrState = OCR_NONE
+            sentenceChars = null
+            charsFetching = -1
             main.removeCallbacks(ticker)
             main.post(ticker)
         }
@@ -249,15 +261,20 @@ class Highlighter(
         if (key == wordKey) return
 
         // From the app, if it says where its characters are.
-        if (node != null && s.charStart >= 0 && !charsUnsupported && !scrolling) {
-            val w = words[index]
-            val rects = charRects(node, s.charStart + w.first, w.last - w.first + 1, b)
-            if (rects != null) {
-                wordKey = key
-                wordRects = rects
-                return
+        if (node != null && s.charStart >= 0 && !charsUnsupported) {
+            val sc = sentenceChars?.takeIf { it.index == now.index }
+            if (sc == null) {
+                fetchChars(now.index, node, s.charStart, now.sentence.length)
+                wordRects = emptyList()
+                return // underline once the app answers
             }
-            charsUnsupported = true
+            val w = words[index]
+            val dx = (b.left - sc.at.left).toFloat()
+            val dy = (b.top - sc.at.top).toFloat()
+            wordRects = (w.first..w.last).mapNotNull { sc.chars.getOrNull(it) }
+                .map { RectF(it).apply { offset(dx, dy) } }
+            wordKey = key
+            return
         }
         if (charsUnsupported || node == null || s.charStart < 0) {
             // From a screenshot of the paragraph.
@@ -310,8 +327,9 @@ class Highlighter(
 
     /** The box moved from [old] to [new]: the screenshot words move with it, or are re-read if it changed shape. */
     private fun shiftOcr(old: Rect, new: Rect) {
-        if (ocrState == OCR_PENDING) return
         if (kotlin.math.abs(old.width() - new.width()) > 4 || kotlin.math.abs(old.height() - new.height()) > 4) {
+            sentenceChars = null // the text has reflowed: ask where the characters are again
+            if (ocrState == OCR_PENDING) return
             ocrState = OCR_NONE
         }
     }
@@ -350,15 +368,17 @@ class Highlighter(
                 // Does the app agree about where its text is? Its paragraph box starts at or
                 // just above the first visible line found here.
                 val n = live
+                val app = n?.let { check(it) }?.takeIf { it != OFF_SCREEN }
                 if (n != null && appTrusted == null) {
-                    val app = check(n)?.takeIf { it != OFF_SCREEN }
                     appTrusted = app != null && kotlin.math.abs(app.top - b.top) <= 40 * density &&
                         kotlin.math.abs(app.left - b.left) <= 40 * density
                 }
-                box = b
+                // Where the app can be trusted, its own paragraph box is the neater one.
+                box = if (appTrusted == true && app != null) app else b
                 ocrSpot = s
-                ocrBox = b
-                ocrWords = inside.map { (w, r) -> w to RectF(r).apply { offset(-b.left.toFloat(), -b.top.toFloat()) } }
+                val origin = box!!
+                ocrBox = origin
+                ocrWords = inside.map { (w, r) -> w to RectF(r).apply { offset(-origin.left.toFloat(), -origin.top.toFloat()) } }
                 ocrState = OCR_DONE
                 alignedFor = -1
                 if (n == null || appTrusted == false) charsUnsupported = true // the app's word places are stale too
@@ -408,11 +428,31 @@ class Highlighter(
         null
     }
 
+    /** Asks the app, in the background, where each character of sentence [index] is. */
+    private fun fetchChars(index: Int, node: AccessibilityNodeInfo, start: Int, length: Int) {
+        if (charsFetching == index) return
+        charsFetching = index
+        @Suppress("DEPRECATION") val copy = AccessibilityNodeInfo.obtain(node)
+        background.execute {
+            val result = charRects(copy, start, length)
+            main.post {
+                if (charsFetching != index) return@post
+                charsFetching = -1
+                if (result == null) {
+                    charsUnsupported = true
+                } else {
+                    sentenceChars = SentenceChars(index, result.first, result.second)
+                }
+                wordKey = -1
+            }
+        }
+    }
+
     /**
-     * Screen boxes of characters [start, start+length) in the node's text, moved to line up with
-     * the box [b] as drawn. Null if the app can't say where its characters are.
+     * Screen boxes of characters [start, start+length) in the node's text (null where a character
+     * has none), and the node's box at the time. Null if the app can't say where its characters are.
      */
-    private fun charRects(node: AccessibilityNodeInfo, start: Int, length: Int, b: Rect): List<RectF>? = try {
+    private fun charRects(node: AccessibilityNodeInfo, start: Int, length: Int): Pair<Rect, Array<RectF?>>? = try {
         val key = AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY
         if (node.availableExtraData?.contains(key) != true) null else {
             val args = Bundle().apply {
@@ -421,13 +461,10 @@ class Highlighter(
             }
             node.refreshWithExtraData(key, args)
             @Suppress("DEPRECATION")
-            val rects = node.extras.getParcelableArray(key)?.mapNotNull { it as? RectF }?.filter { !it.isEmpty }.orEmpty()
-            if (rects.isEmpty()) null else {
-                val at = Rect().also { node.getBoundsInScreen(it) }
-                val dx = (b.left - at.left).toFloat()
-                val dy = (b.top - at.top).toFloat()
-                rects.map { RectF(it).apply { offset(dx, dy) } }
-            }
+            val raw = node.extras.getParcelableArray(key)
+            val chars = Array(length) { i -> (raw?.getOrNull(i) as? RectF)?.takeIf { !it.isEmpty } }
+            if (chars.all { it == null }) null
+            else Rect().also { node.getBoundsInScreen(it) } to chars
         }
     } catch (_: Throwable) {
         null
