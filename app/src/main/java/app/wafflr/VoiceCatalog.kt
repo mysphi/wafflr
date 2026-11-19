@@ -10,6 +10,8 @@ data class VoicePack(
     val dirName: String,
     val bundled: Boolean,
     val sizeNote: String,
+    /** Kokoro only: the model file inside the pack. */
+    val modelFile: String = "model.onnx",
 ) {
     val url: String
         get() = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/$dirName.tar.bz2"
@@ -37,7 +39,12 @@ object VoiceCatalog {
     val piperKristin = piper("kristin", "en_US-kristin-medium")
     val piperRyan = piper("ryan", "en_US-ryan-medium")
     val piperJoe = piper("joe", "en_US-joe-medium")
-    val kokoro = VoicePack("kokoro-v1", EngineKind.KOKORO, "kokoro-multi-lang-v1_0", bundled = false, sizeNote = "about 330 MB download, use Wi-Fi; slower to start")
+    // The int8 (compressed) Kokoro model: about a third of the size of the full one.
+    val kokoro = VoicePack(
+        "kokoro-v1-int8", EngineKind.KOKORO, "kokoro-int8-multi-lang-v1_0", bundled = false,
+        sizeNote = "about 126 MB download, use Wi-Fi; slower to start than Piper",
+        modelFile = "model.int8.onnx",
+    )
 
     val packs = listOf(
         piperAlan, piperJenny, piperAlba, piperCori, piperNorthern, piperSouthern,
@@ -74,6 +81,16 @@ object VoiceCatalog {
     )
 
     val default: Voice = voices.first()
+
+    /** Name for a pack in the list of downloaded voices, e.g. "Piper · Alan (British male)". */
+    fun title(pack: VoicePack): String {
+        val inPack = voices.filter { it.pack == pack }
+        return if (inPack.size == 1) inPack[0].label
+        else "Kokoro: " + inPack.joinToString(", ") { it.label.substringAfter("· ").substringBefore(" (") }
+    }
+
+    /** Old pack folders that are no longer offered (e.g. the full-size Kokoro), safe to remove. */
+    val retiredDirs = listOf("kokoro-multi-lang-v1_0")
 
     fun byId(id: String?): Voice = voices.firstOrNull { it.id == id } ?: default
 }

@@ -29,6 +29,8 @@ class MainActivity : Activity(), ReaderListener {
     private lateinit var shortcutWarning: LinearLayout
     private lateinit var bubbleSwitch: Switch
     private lateinit var packStatus: TextView
+    private lateinit var voiceSpinner: Spinner
+    private lateinit var installedList: LinearLayout
     private lateinit var input: EditText
     private lateinit var speedLabel: TextView
     private lateinit var status: TextView
@@ -93,7 +95,7 @@ class MainActivity : Activity(), ReaderListener {
 
         // --- Voice ----------------------------------------------------------------------------
         root.addView(heading("Voice"))
-        root.addView(Spinner(this).apply {
+        voiceSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, VoiceCatalog.voices.map { it.label })
             setSelection(VoiceCatalog.voices.indexOf(prefs.voice))
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -103,9 +105,16 @@ class MainActivity : Activity(), ReaderListener {
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
-        })
+        }
+        root.addView(voiceSpinner)
         packStatus = body("")
         root.addView(packStatus)
+
+        // --- Downloaded voices ------------------------------------------------------------------
+        root.addView(heading("Downloaded voices"))
+        root.addView(body("Voices on this phone, which work offline. Remove one to free up space; it downloads again if you pick it later. The last voice can't be removed."))
+        installedList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(installedList)
         speedLabel = body("")
         root.addView(speedLabel)
         root.addView(SeekBar(this).apply {
@@ -213,7 +222,60 @@ class MainActivity : Activity(), ReaderListener {
         refreshPack()
     }
 
+    /** Rebuilds the list of downloaded voices, each with a Remove button. */
+    private fun refreshInstalled() {
+        installedList.removeAllViews()
+        val installed = app.voices.installedPacks()
+        if (installed.isEmpty()) {
+            installedList.addView(body("None yet. The built-in voice is being set up."))
+            return
+        }
+        for (pack in installed) {
+            val mb = app.voices.sizeOf(pack) / 1_000_000
+            val label = body("${VoiceCatalog.title(pack)}\n$mb MB")
+            val remove = button("Remove") { confirmRemove(pack) }.apply {
+                isEnabled = installed.size > 1
+            }
+            installedList.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                addView(remove, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            })
+        }
+    }
+
+    private fun confirmRemove(pack: VoicePack) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Remove ${VoiceCatalog.title(pack)}?")
+            .setMessage("This frees up the space it uses. You can download it again later.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Remove") { _, _ -> removePack(pack) }
+            .show()
+    }
+
+    private fun removePack(pack: VoicePack) {
+        val others = app.voices.installedPacks().filter { it != pack }
+        if (others.isEmpty()) {
+            Toast.makeText(this, "Wafflr needs at least one voice, so the last one can't be removed.", Toast.LENGTH_LONG).show()
+            return
+        }
+        // Stop anything using it, free it, delete the files.
+        if (reader.status.state != ReaderState.IDLE) reader.stop()
+        app.models.release(pack)
+        app.voices.delete(pack)
+        // If it was the chosen voice, switch to one that's still on the phone.
+        if (prefs.voice.pack == pack) {
+            val next = VoiceCatalog.voices.first { it.pack == others.first() }
+            prefs.voice = next
+            voiceSpinner.setSelection(VoiceCatalog.voices.indexOf(next))
+            Toast.makeText(this, "Switched to ${next.label}.", Toast.LENGTH_SHORT).show()
+        }
+        refreshPack()
+    }
+
     private fun refreshPack() {
+        refreshInstalled()
         val pack = prefs.voice.pack
         packStatus.text = when {
             app.voices.isInstalled(pack) -> "Voice files installed; works offline."

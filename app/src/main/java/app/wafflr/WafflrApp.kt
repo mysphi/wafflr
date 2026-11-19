@@ -20,6 +20,9 @@ class WafflrApp : Application() {
         voices = VoiceStore(this)
         models = Models(voices)
         reader = Reader(this, models)
+        Thread({
+            try { voices.housekeeping() } catch (_: Throwable) {}
+        }, "voice-housekeeping").start()
         // Keep a log of every read so it can be copied into a test report.
         reader.addListener(object : ReaderListener {
             override fun onFinished(result: SpeechResult) = prefs.addResult(result.summary())

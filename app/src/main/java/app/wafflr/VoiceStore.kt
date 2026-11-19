@@ -19,6 +19,7 @@ class VoiceStore(private val context: Context) {
     fun isInstalled(pack: VoicePack) = File(dirFor(pack), ".installed").exists()
 
     /** Blocking. Call from a background thread. [progress] receives human-readable status. */
+    @Synchronized
     fun install(pack: VoicePack, progress: (String) -> Unit) {
         if (isInstalled(pack)) return
         root.mkdirs()
@@ -104,7 +105,25 @@ class VoiceStore(private val context: Context) {
         }
     }
 
+    /** Removes a pack's files. A built-in pack can be unpacked again from the app later. */
     fun delete(pack: VoicePack) {
-        if (!pack.bundled) dirFor(pack).deleteRecursively()
+        dirFor(pack).deleteRecursively()
+    }
+
+    fun installedPacks(): List<VoicePack> = VoiceCatalog.packs.filter { isInstalled(it) }
+
+    /** Space a pack's files take up, in bytes. */
+    fun sizeOf(pack: VoicePack): Long = dirFor(pack).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    /**
+     * Tidies up at start-up: removes folders of packs Wafflr no longer offers, half-finished
+     * installs and stale downloads, then makes sure at least one voice is ready (the built-in one).
+     * Blocking. Call from a background thread.
+     */
+    fun housekeeping() {
+        for (name in VoiceCatalog.retiredDirs) File(root, name).deleteRecursively()
+        root.listFiles { f -> f.name.endsWith(".tmp") }?.forEach { it.deleteRecursively() }
+        context.cacheDir.listFiles { f -> f.name.endsWith(".tar.bz2") }?.forEach { it.delete() }
+        if (installedPacks().isEmpty()) install(VoiceCatalog.piperAlan) {}
     }
 }
