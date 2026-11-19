@@ -60,6 +60,7 @@ class Highlighter(
     private var scrolledThisRead = false
     private var locating = false            // looking for the paragraph in a screenshot
     private var locateRetryAt = 0L
+    private var locateFails = 0
     private var scrollSeq = 0               // counts page movements, so a screenshot taken before one is ignored
     private var needsLocate = false         // find the paragraph in a screenshot once the page settles
     /** Whether the app's places for its text are right after scrolling: null until checked against a screenshot. */
@@ -175,6 +176,7 @@ class Highlighter(
         }
         val now = SystemClock.uptimeMillis()
         scrollSeq++
+        locateFails = 0
         scrolledThisRead = true
         val known = (dx != 0 || dy != 0) && dx != -1 && dy != -1
         if (known) lastScroll = now else followUntil = now + FOLLOW_MS
@@ -221,7 +223,9 @@ class Highlighter(
                 movedUnchecked = false
                 unseen = 0
                 // After scrolling, a new paragraph's place has to be found the same way.
-                needsLocate = scrolledThisRead && (node == null || appTrusted != true)
+                needsLocate = (scrolledThisRead && (node == null || appTrusted != true)) ||
+                    (node == null && s.spot.rect.isEmpty) // text with no known place yet (a selection)
+                locateFails = 0
             }
         }
         val scrolling = t - lastScroll < SETTLE_MS
@@ -396,7 +400,7 @@ class Highlighter(
      */
     private fun locate(s: SentenceSpot, node: AccessibilityNodeInfo?, sentence: String) {
         val t = SystemClock.uptimeMillis()
-        if (locating || t < locateRetryAt) return
+        if (locating || t < locateRetryAt || locateFails >= MAX_LOCATE_FAILS) return
         locating = true
         val scrollAt = scrollSeq
         val screen = try {
@@ -412,6 +416,7 @@ class Highlighter(
                 if (spot?.spot !== s.spot || scrollSeq != scrollAt || state == ReaderState.IDLE) return@post
                 val placed = found?.let { placeAmong(text, it) }
                 if (placed == null) {
+                    locateFails++ // the text may simply not be on screen: stop looking after a few tries
                     locateRetryAt = SystemClock.uptimeMillis() + LOCATE_RETRY_MS
                     return@post
                 }
@@ -611,6 +616,7 @@ class Highlighter(
         private const val RECHECK_MS = 1000L
         private const val HIDE_GRACE_MS = 500L
         private const val LOCATE_RETRY_MS = 1500L
+        private const val MAX_LOCATE_FAILS = 4
         private const val OCR_NONE = 0
         private const val OCR_PENDING = 1
         private const val OCR_DONE = 2

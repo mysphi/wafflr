@@ -148,6 +148,19 @@ class WafflrService : AccessibilityService() {
         }
     }
 
+    /**
+     * Reads text chosen with "Read with Wafflr", finding it on screen first so it can be
+     * highlighted. Waits a moment for the menu to close so the app's screen is the one searched.
+     */
+    fun readSelection(text: String, source: String) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            val p = app.prefs
+            val pieces = try { SelectionFinder.find(this, text) } catch (_: Throwable) { null }
+            if (pieces.isNullOrEmpty()) app.reader.read(text, p.voice, p.speed, p.threads, source, p.tuning)
+            else app.reader.readPieces(pieces, p.voice, p.speed, p.threads, source, p.tuning)
+        }, 300)
+    }
+
     fun readScreen() {
         if (locked || isLockedNow()) return // never read what's behind the lock screen
         val p = app.prefs
