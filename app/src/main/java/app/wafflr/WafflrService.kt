@@ -32,24 +32,49 @@ class WafflrService : AccessibilityService() {
     private var locked = false
     private val lockWatcher = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            locked = when (intent.action) {
+            setLocked(when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> true
                 Intent.ACTION_USER_PRESENT -> false
                 else -> isLockedNow()
-            }
-            updateBubble()
-            highlighter?.suppressed = locked
-            if (locked) selector?.dismiss()
+            })
         }
     }
 
-    private fun isLockedNow(): Boolean =
-        getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+    private fun setLocked(value: Boolean) {
+        locked = value
+        updateBubble()
+        highlighter?.suppressed = value
+        lockHandler.removeCallbacks(unlockCheck)
+        if (value) {
+            selector?.dismiss()
+            lockHandler.postDelayed(unlockCheck, 1000)
+        }
+    }
+
+    /**
+     * Some phones don't reliably announce unlocking, so while locked, look every second; any
+     * window change also prompts a look (see [onAccessibilityEvent]).
+     */
+    private val lockHandler = Handler(Looper.getMainLooper())
+    private val unlockCheck = object : Runnable {
+        override fun run() {
+            if (!locked) return
+            if (!isLockedNow()) setLocked(false) else lockHandler.postDelayed(this, 1000)
+        }
+    }
+
+    /** Locked: the screen is off, or the lock screen is showing. */
+    private fun isLockedNow(): Boolean {
+        val keyguard = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+        val on = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false
+        return keyguard || !on
+    }
 
     override fun onServiceConnected() {
         instance = this
         app.prefs.prefs.registerOnSharedPreferenceChangeListener(prefListener)
         locked = isLockedNow()
+        if (locked) lockHandler.postDelayed(unlockCheck, 1000)
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
@@ -173,6 +198,7 @@ class WafflrService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         // The page scrolled or changed under the highlight: it would point at the wrong text.
         if (event.packageName?.toString() == packageName) return
+        if (locked && !isLockedNow()) setLocked(false)
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> highlighter?.let { h ->
                 if (!h.active) return
@@ -193,6 +219,7 @@ class WafflrService : AccessibilityService() {
     override fun onDestroy() {
         app.prefs.prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
         try { unregisterReceiver(lockWatcher) } catch (_: Throwable) {}
+        lockHandler.removeCallbacks(unlockCheck)
         selector?.dismiss()
         selector = null
         bubble?.hide()
