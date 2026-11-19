@@ -28,7 +28,7 @@ class WafflrService : AccessibilityService() {
     private fun updateBubble() {
         if (app.prefs.bubbleEnabled) {
             if (bubble == null) {
-                bubble = FloatingBubble(this, app.prefs, app.reader, ::onBubbleTap, ::selectArea).also { it.show() }
+                bubble = FloatingBubble(this, app.prefs, app.reader, ::onBubbleTap, ::selectArea, ::openApp).also { it.show() }
             }
         } else {
             bubble?.hide()
@@ -51,9 +51,14 @@ class WafflrService : AccessibilityService() {
     private var selector: AreaSelector? = null
     private val areaReader by lazy { AreaReader(this) }
 
+    private fun openApp() {
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     /** Lets you drag a box or draw a shape, then reads the text inside it. */
-    fun selectArea() {
+    fun selectArea(freehand: Boolean) {
         if (selector != null) return
+        app.prefs.areaFreehand = freehand
         app.reader.stop()
         bubble?.setHidden(true)
         selector = AreaSelector(this, app.prefs) { area ->

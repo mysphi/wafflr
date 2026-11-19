@@ -7,7 +7,7 @@
     <application
         android:name=".WafflrApp"
         android:allowBackup="false"
-        android:icon="@android:drawable/sym_action_chat"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 

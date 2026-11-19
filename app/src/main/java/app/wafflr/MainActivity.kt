@@ -72,10 +72,9 @@ class MainActivity : Activity(), ReaderListener {
         }
         root.addView(bubbleSwitch)
         root.addView(body(
-            "Floating button: tap to read the screen, tap again to pause or resume, drag to move. " +
-            "Long-press it to drag a box or draw around just the text you want (long-press while reading stops). " +
-            "While reading, ⏮ and ⏭ go back or forward a sentence.\n" +
-            "To read just part of the screen: select the text and tap Copy, then tap the floating button. " +
+            "Floating controls: tap the Wafflr logo to open them; drag it to move; long-press it to open this app. " +
+            "The speaker reads copied text (if you copied some in the last two minutes) or the whole screen, and becomes pause/resume while reading. " +
+            "Beside it: draw a box or a shape around just the text you want; while reading, previous, next and stop.\n" +
             "Or choose Share → Read with Wafflr (some apps also show 'Read with Wafflr' straight in the selection menu)."
         ))
 
