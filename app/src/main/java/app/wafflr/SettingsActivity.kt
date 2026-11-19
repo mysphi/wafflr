@@ -36,7 +36,6 @@ class SettingsActivity : WafflrScreen() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad * 3)
         }
-        root.addView(heading("Settings"))
 
         // --- Turn on Wafflr ---------------------------------------------------------------------------
         root.addView(heading("Turn on Wafflr"))

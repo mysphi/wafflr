@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Path
+import android.graphics.Rect
 import android.view.Display
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -21,6 +22,20 @@ class AreaReader(private val service: AccessibilityService) {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     fun read(area: SelectedArea, onResult: (Result<String>) -> Unit) {
+        capture({ onResult(Result.failure(it)) }) { bitmap ->
+            recognise(cropToArea(bitmap, area), 0, 0) { r -> onResult(r.map { blocks -> blocks.joinToString("\n") { it.first } }) }
+        }
+    }
+
+    /**
+     * Recognises the text in a picture of the whole screen, as blocks with their positions.
+     * Used when an app doesn't share its text with accessibility services.
+     */
+    fun readScreenBlocks(onResult: (Result<List<Pair<String, Rect>>>) -> Unit) {
+        capture({ onResult(Result.failure(it)) }) { bitmap -> recognise(bitmap, 0, 0, onResult) }
+    }
+
+    private fun capture(onError: (Throwable) -> Unit, onBitmap: (Bitmap) -> Unit) {
         service.takeScreenshot(
             Display.DEFAULT_DISPLAY,
             service.mainExecutor,
@@ -36,10 +51,10 @@ class AreaReader(private val service: AccessibilityService) {
                         null
                     }
                     if (bitmap == null) {
-                        onResult(Result.failure(IllegalStateException("Couldn't capture the screen.")))
+                        onError(IllegalStateException("Couldn't capture the screen."))
                         return
                     }
-                    recognise(cropToArea(bitmap, area), onResult)
+                    onBitmap(bitmap)
                 }
 
                 override fun onFailure(errorCode: Int) {
@@ -50,7 +65,7 @@ class AreaReader(private val service: AccessibilityService) {
                             "Too quick; please try again."
                         else -> "Couldn't capture the screen (error $errorCode)."
                     }
-                    onResult(Result.failure(IllegalStateException(why)))
+                    onError(IllegalStateException(why))
                 }
             },
         )
@@ -73,18 +88,21 @@ class AreaReader(private val service: AccessibilityService) {
         return out
     }
 
-    private fun recognise(bitmap: Bitmap, onResult: (Result<String>) -> Unit) {
+    /** Text blocks in reading order, each with its box in screen pixels (offset by [dx], [dy]). */
+    private fun recognise(bitmap: Bitmap, dx: Int, dy: Int, onResult: (Result<List<Pair<String, Rect>>>) -> Unit) {
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { visionText ->
                 // Reading order: top to bottom, then left to right.
                 val blocks = visionText.textBlocks.sortedWith(
                     compareBy({ (it.boundingBox?.top ?: 0) / ROW_BAND }, { it.boundingBox?.left ?: 0 })
                 )
-                val text = blocks.joinToString("\n") { block ->
-                    joinLines(block.lines.map { it.text })
+                val out = blocks.mapNotNull { block ->
+                    val text = joinLines(block.lines.map { it.text }).trim()
+                    if (text.isEmpty()) null
+                    else text to (block.boundingBox?.let { Rect(it).apply { offset(dx, dy) } } ?: Rect())
                 }
                 bitmap.recycle()
-                onResult(Result.success(text.trim()))
+                onResult(Result.success(out))
             }
             .addOnFailureListener { e ->
                 bitmap.recycle()

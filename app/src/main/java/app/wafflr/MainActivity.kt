@@ -46,12 +46,12 @@ class MainActivity : WafflrScreen(), ReaderListener {
             setPadding(pad, pad, pad, pad * 3)
         }
 
-        // Title with a settings cog on the right. (The top bar gets a cog too, when there is one.)
-        root.addView(LinearLayout(this).apply {
+        // The top bar already shows "Wafflr" and the settings cog. Only if there is no top bar,
+        // show a cog here instead.
+        if (actionBar == null) root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            addView(heading("Wafflr"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            if (actionBar == null) {
+            gravity = android.view.Gravity.END
+            run {
                 addView(android.widget.ImageButton(this@MainActivity).apply {
                     setImageResource(R.drawable.ic_settings)
                     background = null

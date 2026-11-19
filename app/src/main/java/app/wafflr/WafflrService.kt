@@ -84,11 +84,52 @@ class WafflrService : AccessibilityService() {
     fun readScreen() {
         val p = app.prefs
         val found = try { ScreenText.read(this, p.readOptions) } catch (_: Throwable) { null }
-        if (found == null || found.pieces.isEmpty()) {
-            Toast.makeText(this, "Wafflr couldn't find any text to read here.", Toast.LENGTH_SHORT).show()
+        if (found != null && found.hasSentence) {
+            app.reader.readPieces(found.pieces, p.voice, p.speed, p.threads, found.summary(), p.tuning)
             return
         }
-        app.reader.readPieces(found.pieces, p.voice, p.speed, p.threads, found.summary(), p.tuning)
+        // The app shared no real sentences (some apps keep their article text out of reach of
+        // accessibility services). Read a picture of the screen instead, skipping the places
+        // where the scan found menus and bars, and the status bar.
+        readScreenPicture(found)
+    }
+
+    private fun readScreenPicture(found: ScreenRead?) {
+        val p = app.prefs
+        bubble?.setHidden(true) // keep the floating controls out of the picture
+        Handler(Looper.getMainLooper()).postDelayed({
+            areaReader.readScreenBlocks { result ->
+                bubble?.setHidden(false)
+                val blocks = result.getOrNull().orEmpty()
+                val statusBar = try {
+                    getSystemService(android.view.WindowManager::class.java)!!.currentWindowMetrics.windowInsets
+                        .getInsets(android.view.WindowInsets.Type.statusBars()).top
+                } catch (_: Throwable) { 0 }
+                val skipAreas = found?.chromeRects.orEmpty()
+                // The scan found no sentences, so whatever it did find were labels ("Home",
+                // "Search"): skip those words in the picture too.
+                val labels = found?.pieces.orEmpty().map { it.first.lowercase() }.toSet()
+                val screenH = resources.displayMetrics.heightPixels
+                val kept = blocks.filter { (text, r) ->
+                    val short = text.split(Regex("\\s+")).size <= 5 && !text.trimEnd().endsWith(".")
+                    r.centerY() > statusBar &&
+                        skipAreas.none { it.contains(r.centerX(), r.centerY()) } &&
+                        text.lowercase() !in labels &&
+                        // short labels in a bar along the top or bottom edge
+                        !(short && (r.centerY() > screenH * 0.88 || r.centerY() < screenH * 0.12))
+                }
+                val tidied = TextTidy.tidy(kept.map { it.first }, p.readOptions)
+                val pieces = tidied.kept.map { kept[it].first to kept[it].second }
+                when {
+                    pieces.isNotEmpty() ->
+                        app.reader.readPieces(pieces, p.voice, p.speed, p.threads, "whole screen, from a picture (app shared no text)", p.tuning)
+                    found != null && found.pieces.isNotEmpty() ->
+                        app.reader.readPieces(found.pieces, p.voice, p.speed, p.threads, found.summary(), p.tuning)
+                    else ->
+                        Toast.makeText(this, result.exceptionOrNull()?.message ?: "Wafflr couldn't find any text to read here.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }, 150)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {

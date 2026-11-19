@@ -31,7 +31,12 @@ class ScreenRead(
     val skippedDetails: Int,
     /** True when everything looked like menus, so Wafflr read it all rather than nothing. */
     val fellBack: Boolean,
+    /** Where the skipped menus, bars and buttons are, so a screen picture can skip them too. */
+    val chromeRects: List<android.graphics.Rect> = emptyList(),
 ) {
+    /** True if there's at least one real sentence, not just labels. */
+    val hasSentence: Boolean get() = pieces.any { TextTidy.isSentence(it.first) }
+
     val text: String get() = pieces.joinToString("\n") { it.first }
 
     fun summary(): String = buildString {
@@ -103,11 +108,11 @@ object ScreenText {
         val tidied = TextTidy.tidy(filtered.parts, options)
         val pieces = join(tidied.kept.map { filtered.parts[it] to filtered.rects[it] })
         if (pieces.isNotEmpty()) {
-            return ScreenRead(pieces, filtered.skippedControls, filtered.skippedHeadings, filtered.skippedImages + tidied.skipped, false)
+            return ScreenRead(pieces, filtered.skippedControls, filtered.skippedHeadings, filtered.skippedImages + tidied.skipped, false, filtered.chromeRects)
         }
         val everything = Collector(filter = false, options = options, page = rootBounds).also { it.collect(root, 0, null, NO_TAP) }
         val all = join(everything.parts.indices.map { everything.parts[it] to everything.rects[it] })
-        return ScreenRead(all, 0, 0, 0, all.isNotEmpty())
+        return ScreenRead(all, 0, 0, 0, all.isNotEmpty(), filtered.chromeRects)
     }
 
     /** Drops exact repeats (e.g. a title shown twice) while keeping order. */
@@ -140,6 +145,8 @@ object ScreenText {
         var skippedControls = 0
         var skippedHeadings = 0
         var skippedImages = 0
+        val chromeRects = mutableListOf<android.graphics.Rect>()
+        private fun boundsOf(node: AccessibilityNodeInfo) = android.graphics.Rect().also { node.getBoundsInScreen(it) }
 
         /**
          * [parentText]: nearest ancestor's text, so links inside a paragraph aren't read twice.
@@ -153,6 +160,7 @@ object ScreenText {
             if (node.isEditable || node.isPassword) return // never read what people type
             if (skipMenus && isChrome(node, page.height())) {
                 skippedControls += countText(node, 0)
+                chromeRects += boundsOf(node)
                 return
             }
             val text = node.text?.toString()?.trim()
@@ -163,8 +171,8 @@ object ScreenText {
                     repeat -> {}
                     skipPictures && isImage(node) -> skippedImages++
                     skipHeadings && isHeading(node) -> skippedHeadings++
-                    skipMenus && isShortTapLabel(node, text, inTap) -> skippedControls++
-                    skipMenus && isBottomBarLabel(node, text, page) -> skippedControls++
+                    skipMenus && isShortTapLabel(node, text, inTap) -> { skippedControls++; chromeRects += boundsOf(node) }
+                    skipMenus && isBottomBarLabel(node, text, page) -> { skippedControls++; chromeRects += boundsOf(node) }
                     else -> {
                         parts += text
                         rects += android.graphics.Rect().also { node.getBoundsInScreen(it) }
