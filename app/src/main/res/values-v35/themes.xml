@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 15+ draws apps edge to edge, which put the top of each screen behind the title
+         bar. Wafflr's simple screens keep the classic layout: content starts below the bar. -->
+    <style name="Theme.Wafflr" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

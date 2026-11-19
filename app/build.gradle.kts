@@ -65,4 +65,6 @@ dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
     // Unpacks downloaded voice packs (.tar.bz2)
     implementation("org.apache.commons:commons-compress:1.27.1")
+    // On-device text recognition for drawn areas (model bundled in the APK, works offline)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }

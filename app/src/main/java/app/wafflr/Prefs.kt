@@ -26,14 +26,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("bubble_right", true)
         set(v) = sp.edit().putBoolean("bubble_right", v).apply()
 
+    /** Distance of the floating logo from the top of the screen, in pixels (-1 = default). */
     var bubbleY: Int
-        get() = sp.getInt("bubble_y", -1)
-        set(v) = sp.edit().putInt("bubble_y", v).apply()
+        get() = sp.getInt("bubble_top", -1)
+        set(v) = sp.edit().putInt("bubble_top", v).apply()
 
-    /** Timestamp of the copied text Wafflr last read, so the same copy isn't read twice. */
-    var lastClipStamp: Long
-        get() = sp.getLong("last_clip", 0L)
-        set(v) = sp.edit().putLong("last_clip", v).apply()
+    /** Area reading: freehand shape (true) or box (false). */
+    var areaFreehand: Boolean
+        get() = sp.getBoolean("area_freehand", false)
+        set(v) = sp.edit().putBoolean("area_freehand", v).apply()
 
     fun addResult(text: String) {
         // Keep the newest 30 entries.

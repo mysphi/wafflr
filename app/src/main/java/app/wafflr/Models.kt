@@ -25,6 +25,16 @@ class Models(private val store: VoiceStore) {
     fun generate(model: LoadedModel, text: String, sid: Int, speed: Float): FloatArray =
         model.tts.generate(text = text, sid = sid, speed = speed).samples
 
+    /** Frees the loaded model if it comes from [pack], e.g. before its files are removed. */
+    @Synchronized
+    fun release(pack: VoicePack) {
+        val c = current ?: return
+        if (c.key.startsWith(pack.id + "|")) {
+            c.tts.release()
+            current = null
+        }
+    }
+
     /** Blocking. Downloads/unpacks the voice if needed, then loads it. */
     @Synchronized
     fun get(voice: Voice, threads: Int, progress: (String) -> Unit): LoadedModel {
@@ -48,7 +58,7 @@ class Models(private val store: VoiceStore) {
         val dir = store.dirFor(voice.pack)
         val needed = mutableListOf("tokens.txt", "espeak-ng-data/phontab", "espeak-ng-data/phondata", "espeak-ng-data/phonindex", "espeak-ng-data/intonations")
         if (voice.pack.kind == EngineKind.KOKORO) {
-            needed += listOf("model.onnx", "voices.bin")
+            needed += listOf(voice.pack.modelFile, "voices.bin")
             if (voice.lexicon.isNotEmpty()) needed += voice.lexicon
         }
         val missing = needed.filter { !File(dir, it).isFile }
@@ -84,7 +94,7 @@ class Models(private val store: VoiceStore) {
             }
             EngineKind.KOKORO -> OfflineTtsModelConfig(
                 kokoro = OfflineTtsKokoroModelConfig(
-                    model = File(dir, "model.onnx").absolutePath,
+                    model = File(dir, voice.pack.modelFile).absolutePath,
                     voices = File(dir, "voices.bin").absolutePath,
                     tokens = File(dir, "tokens.txt").absolutePath,
                     dataDir = espeak,

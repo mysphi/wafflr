@@ -2,20 +2,25 @@
 
 An offline "read this to me" app for Android, built as a reading aid for people with dyslexia.
 A floating button sits over any app; select text or draw around it and Wafflr reads it aloud with
-natural Kokoro or Piper voices, entirely on the phone. A Windows version is planned later.
+natural Piper voices, entirely on the phone. A Windows version is planned later.
 
-Plan: see the project's development plan doc. Status: **Phase 1 (core reader)**.
+Plan: see the project's development plan doc. Status: **Phase 2 (read part of the screen)**.
 
 ## Using it
 
-- **Floating button** (over every app): tap to read the screen, tap again to pause or resume,
-  long-press to stop, drag to move. While reading, ⏮ and ⏭ go back or forward a sentence.
-- **Part of the screen**: select text and tap *Copy*, then tap the floating button within two
-  minutes; it reads the copied text instead of the whole screen.
+- **Floating controls** (over every app): a small, faded Wafflr logo sits at the screen edge.
+  Tap it to open the controls, drag it to move, long-press it to open the app. The speaker
+  rises out of the logo: tap it to read the whole screen, tap again to pause or resume.
+  While reading, previous, next and stop slide out beside it.
+- **Draw around text**: from the open controls, tap the box or pencil button, then drag a box
+  (or draw a shape) around the text. Wafflr screenshots that area and recognises the text on
+  the phone (ML Kit, offline), so it also works on PDFs and images.
 - **Share menu**: *Share → Read with Wafflr* works in most apps. Some apps (e.g. Chrome) also
   show *Read with Wafflr* straight in the selection menu.
-- **Voices**: Piper Alan is built in; Piper Jenny and six Kokoro voices download once, then work
-  offline. Pick the voice and speed in the app.
+- **Voices**: Alan is built in; nine more British, Scottish and American Piper voices download
+  once (about 65 MB each), then work offline. The app lists downloaded voices (remove any but
+  the last) and voices to download; the voice picker only offers downloaded ones. Kokoro was
+  tried and dropped: it took about 3 s to start on a mid-range phone.
 
 Phase 0 findings: Piper starts speaking in about 0.3 s on a Nothing Phone 3a, Kokoro in about
 3 s. No app reports text selections to accessibility services, so there is no automatic popup on

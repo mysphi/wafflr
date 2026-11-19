@@ -7,9 +7,9 @@
     <application
         android:name=".WafflrApp"
         android:allowBackup="false"
-        android:icon="@android:drawable/sym_action_chat"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@style/Theme.Wafflr">
 
         <activity
             android:name=".MainActivity"
@@ -20,6 +20,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Wafflr settings"
+            android:parentActivityName=".MainActivity" />
 
         <!-- "Read aloud" entry in the text-selection menu of other apps -->
         <activity
@@ -41,16 +47,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-
-        <!-- Invisible screen opened by the floating button: Android only lets the app in front
-             read the clipboard, so this briefly comes to the front to check for copied text. -->
-        <activity
-            android:name=".ClipboardReadActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:noHistory="true"
-            android:taskAffinity=""
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".WafflrService"
