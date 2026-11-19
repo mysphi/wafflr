@@ -18,52 +18,69 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 
-/**
- * Phase 0 test screen. Two experiments:
- *  1. Voice speed: how quickly each Piper and Kokoro voice starts talking on this phone.
- *  2. Selection probe: which apps report selected text (see SelectionProbeService).
- */
-class MainActivity : Activity() {
+/** Set-up and settings screen, plus a place to try voices. */
+class MainActivity : Activity(), ReaderListener {
     private lateinit var prefs: Prefs
-    private lateinit var voiceSpinner: Spinner
+    private lateinit var serviceStatus: TextView
+    private lateinit var bubbleSwitch: Switch
     private lateinit var packStatus: TextView
     private lateinit var input: EditText
     private lateinit var speedLabel: TextView
-    private lateinit var threadsSpinner: Spinner
     private lateinit var status: TextView
+    private lateinit var playButton: Button
     private lateinit var results: TextView
-    private lateinit var probeStatus: TextView
-    private lateinit var log: TextView
     private lateinit var crash: TextView
-    private val logListener: () -> Unit = { runOnUiThread { refreshLog() } }
-    private val speech get() = WafflrApp.instance.speech
-    private val store get() = WafflrApp.instance.voices
-
+    private val app get() = WafflrApp.instance
+    private val reader get() = app.reader
     private val dp get() = resources.displayMetrics.density
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = Prefs(this)
+        prefs = app.prefs
         val pad = (16 * dp).toInt()
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad * 3)
         }
 
-        root.addView(heading("Wafflr · Phase 0 tests"))
-        root.addView(body(SpeechEngine.deviceLine() + " · build " + packageManager.getPackageInfo(packageName, 0).versionName))
+        root.addView(heading("Wafflr"))
+        root.addView(body("Reads the text on your screen aloud, offline."))
         crash = mono("")
         root.addView(crash)
 
-        // --- Voice test -------------------------------------------------------------------
-        root.addView(heading("1. Voice speed test"))
-        root.addView(body("Pick a voice and tap Speak. Kokoro and Jenny download once (use Wi-Fi), then work offline. Try each voice in airplane mode too."))
+        // --- Set-up ---------------------------------------------------------------------------
+        root.addView(heading("Turn on Wafflr"))
+        serviceStatus = body("")
+        root.addView(serviceStatus)
+        root.addView(body(
+            "Wafflr needs its Accessibility switch to float over other apps and read the screen. " +
+            "If the switch is greyed out: Settings → Apps → Wafflr → ⋮ → Allow restricted settings, then try again."
+        ))
+        root.addView(button("Open Accessibility settings") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        })
+        bubbleSwitch = Switch(this).apply {
+            text = "Show the floating button"
+            textSize = 16f
+            isChecked = prefs.bubbleEnabled
+            setOnCheckedChangeListener { _, on -> prefs.bubbleEnabled = on }
+            setPadding(0, (12 * dp).toInt(), 0, (12 * dp).toInt())
+        }
+        root.addView(bubbleSwitch)
+        root.addView(body(
+            "Floating button: tap to read the screen, tap again to pause or resume, long-press to stop, drag to move. " +
+            "While reading, ⏮ and ⏭ go back or forward a sentence.\n" +
+            "To read just part of the screen: select the text and tap Copy, then tap the floating button. " +
+            "Or choose Share → Read with Wafflr (some apps also show 'Read with Wafflr' straight in the selection menu)."
+        ))
 
-        voiceSpinner = Spinner(this).apply {
+        // --- Voice ----------------------------------------------------------------------------
+        root.addView(heading("Voice"))
+        root.addView(Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, VoiceCatalog.voices.map { it.label })
             setSelection(VoiceCatalog.voices.indexOf(prefs.voice))
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -73,18 +90,9 @@ class MainActivity : Activity() {
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
-        }
-        root.addView(voiceSpinner)
+        })
         packStatus = body("")
         root.addView(packStatus)
-
-        input = EditText(this).apply {
-            setText(SAMPLE)
-            minLines = 4
-            textSize = 15f
-        }
-        root.addView(input)
-
         speedLabel = body("")
         root.addView(speedLabel)
         root.addView(SeekBar(this).apply {
@@ -101,134 +109,123 @@ class MainActivity : Activity() {
         })
         updateSpeedLabel()
 
-        root.addView(body("CPU threads used for speech"))
+        // --- Try it ---------------------------------------------------------------------------
+        root.addView(heading("Try it"))
+        input = EditText(this).apply { setText(SAMPLE); minLines = 4; textSize = 15f }
+        root.addView(input)
+        playButton = button("Read") { onPlay() }
+        root.addView(row(playButton, button("Stop") { reader.stop() }))
+        status = body("")
+        root.addView(status)
+
+        // --- Test report ----------------------------------------------------------------------
+        root.addView(heading("Test report"))
+        results = mono("")
+        root.addView(results)
+        root.addView(row(
+            button("Copy report") { copyReport() },
+            button("Clear") { prefs.results = ""; refreshResults() },
+        ))
+        root.addView(body("Advanced: CPU threads used for speech"))
         val threadOptions = listOf(1, 2, 4, 6)
-        threadsSpinner = Spinner(this).apply {
+        root.addView(Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, threadOptions.map { "$it threads" })
             setSelection(threadOptions.indexOf(prefs.threads).coerceAtLeast(0))
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { prefs.threads = threadOptions[pos] }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
-        }
-        root.addView(threadsSpinner)
-
-        root.addView(row(
-            button("Speak") { speak() },
-            button("Stop") { speech.stop(); status.text = "Stopped" },
-        ))
-        status = body("Ready")
-        root.addView(status)
-
-        root.addView(heading("Results"))
-        results = mono("")
-        root.addView(results)
-        root.addView(row(
-            button("Copy results") { copy("Wafflr voice results", report()) },
-            button("Clear") { prefs.results = ""; refreshResults() },
-        ))
-
-        // --- Selection probe ----------------------------------------------------------------
-        root.addView(heading("2. Text selection test"))
-        root.addView(body(
-            "a) Turn on the Wafflr selection probe in Accessibility settings. On a sideloaded app, Android may block this the first time: open App info for Wafflr, tap the ⋮ menu, choose 'Allow restricted settings', then try again.\n" +
-            "b) In Chrome, Gmail, Google News and a PDF, long-press to select some text. Each selection should add a line below.\n" +
-            "c) Also tap 'Read with Wafflr' in the selection menu (it may be under ⋮). It reads with the voice chosen above."
-        ))
-        probeStatus = body("")
-        root.addView(probeStatus)
-        root.addView(button("Open Accessibility settings") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         })
-        log = mono("")
-        root.addView(log)
-        root.addView(row(
-            button("Copy log") { copy("Wafflr selection log", report()) },
-            button("Clear log") { SelectionLog.clear() },
-        ))
 
         setContentView(ScrollView(this).apply { addView(root) })
-        refreshResults()
-        val lastCrash = CrashReport.lastCrash(this)
-        crash.text = if (lastCrash.isEmpty()) "" else "Last time the app closed unexpectedly:\n$lastCrash\n(Included when you tap Copy results.)"
-        crash.visibility = if (lastCrash.isEmpty()) View.GONE else View.VISIBLE
     }
 
     override fun onResume() {
         super.onResume()
-        SelectionLog.addListener(logListener)
-        refreshLog()
+        reader.addListener(this)
+        val on = isServiceEnabled()
+        serviceStatus.text = if (on) "✓ Wafflr is on" else "✗ Wafflr is off. Turn it on in Accessibility settings (look for Wafflr)."
+        bubbleSwitch.isEnabled = on
         refreshPack()
         refreshResults()
-        probeStatus.text = if (isProbeEnabled()) "Selection probe: ON" else "Selection probe: OFF"
+        val lastCrash = CrashReport.lastCrash(this)
+        crash.text = if (lastCrash.isEmpty()) "" else "Last time the app closed unexpectedly:\n$lastCrash\n(Included in the test report.)"
+        crash.visibility = if (lastCrash.isEmpty()) View.GONE else View.VISIBLE
     }
 
     override fun onPause() {
-        SelectionLog.removeListener(logListener)
+        reader.removeListener(this)
         super.onPause()
     }
 
-    private fun speak() {
-        val text = input.text.toString().trim()
-        if (text.isEmpty()) return
-        status.text = "Starting…"
-        speech.speak(text, prefs.voice, prefs.speed, prefs.threads, object : SpeechListener {
-            override fun onStatus(text: String) = runOnUiThread { status.text = text }
-            override fun onDone(result: SpeechResult) = runOnUiThread {
-                status.text = if (result.stopped) "Stopped" else "Done"
-                prefs.results = result.summary() + "\n\n" + prefs.results
-                refreshResults()
-                refreshPack()
-            }
-            override fun onError(message: String) = runOnUiThread {
-                status.text = "Error: $message"
-                prefs.results = "ERROR with ${prefs.voice.label}:\n$message\n\n" + prefs.results
-                refreshResults()
-                refreshPack()
-            }
-        })
+    private fun onPlay() {
+        when (reader.status.state) {
+            ReaderState.PLAYING, ReaderState.PAUSED -> reader.togglePause()
+            ReaderState.PREPARING -> {}
+            ReaderState.IDLE -> reader.read(input.text.toString(), prefs.voice, prefs.speed, prefs.threads, "Try it")
+        }
+    }
+
+    override fun onStatus(status: ReaderStatus) {
+        this.status.text = when (status.state) {
+            ReaderState.IDLE -> ""
+            ReaderState.PREPARING -> status.message.ifEmpty { "Getting ready…" }
+            ReaderState.PLAYING -> "Reading ${status.index + 1} of ${status.total}"
+            ReaderState.PAUSED -> "Paused at ${status.index + 1} of ${status.total}"
+        }
+        playButton.text = when (status.state) {
+            ReaderState.PLAYING -> "Pause"
+            ReaderState.PAUSED -> "Resume"
+            else -> "Read"
+        }
+    }
+
+    override fun onFinished(result: SpeechResult) {
+        refreshResults()
+        refreshPack()
+    }
+
+    override fun onError(message: String) {
+        status.text = "Error: $message"
+        refreshResults()
+        refreshPack()
     }
 
     private fun refreshPack() {
         val pack = prefs.voice.pack
         packStatus.text = when {
-            store.isInstalled(pack) -> "Voice files: installed, works offline"
-            pack.bundled -> "Voice files: built in (unpacked on first use)"
-            else -> "Voice files: not downloaded yet (${pack.sizeNote}). Tap Speak to download."
+            app.voices.isInstalled(pack) -> "Voice files installed; works offline."
+            pack.bundled -> "Built-in voice."
+            else -> "Not downloaded yet (${pack.sizeNote}). It downloads the first time you use it."
         }
     }
 
     private fun refreshResults() {
-        results.text = prefs.results.ifEmpty { "No runs yet." }
-    }
-
-    private fun refreshLog() {
-        log.text = SelectionLog.read().ifEmpty { "No selections logged yet." }
+        results.text = prefs.results.ifEmpty { "Nothing read yet." }
     }
 
     private fun updateSpeedLabel() {
         speedLabel.text = "Speed: %.1f×".format(prefs.speed)
     }
 
-    private fun report(): String = buildString {
-        append("Wafflr Phase 0 report\n")
-        append(SpeechEngine.deviceLine()).append("\n")
-        append("App version ").append(packageManager.getPackageInfo(packageName, 0).versionName).append("\n\n")
-        append("VOICE RESULTS\n").append(prefs.results.ifEmpty { "none\n" }).append("\n")
-        append("SELECTION LOG\n").append(SelectionLog.read().ifEmpty { "none\n" })
-        val lastCrash = CrashReport.lastCrash(this@MainActivity)
-        if (lastCrash.isNotEmpty()) append("\nLAST CRASH\n").append(lastCrash).append("\n")
-    }
-
-    private fun isProbeEnabled(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-        val me = ComponentName(this, SelectionProbeService::class.java).flattenToString()
-        return enabled.split(':').any { it.equals(me, ignoreCase = true) }
-    }
-
-    private fun copy(label: String, text: String) {
-        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(label, text))
+    private fun copyReport() {
+        val report = buildString {
+            append("Wafflr test report\n")
+            append(Models.deviceLine()).append("\n")
+            append("App version ").append(packageManager.getPackageInfo(packageName, 0).versionName).append("\n")
+            append("Accessibility service: ").append(if (isServiceEnabled()) "on" else "off").append("\n\n")
+            append(prefs.results.ifEmpty { "Nothing read yet." }).append("\n")
+            val lastCrash = CrashReport.lastCrash(this@MainActivity)
+            if (lastCrash.isNotEmpty()) append("\nLAST CRASH\n").append(lastCrash).append("\n")
+        }
+        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Wafflr report", report))
         Toast.makeText(this, "Copied. Paste it into the chat.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun isServiceEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        val me = ComponentName(this, WafflrService::class.java).flattenToString()
+        return enabled.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
     // --- tiny view helpers ------------------------------------------------------------------
@@ -260,9 +257,7 @@ class MainActivity : Activity() {
 
     private fun row(vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        views.forEach {
-            addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
+        views.forEach { addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)) }
     }
 
     companion object {

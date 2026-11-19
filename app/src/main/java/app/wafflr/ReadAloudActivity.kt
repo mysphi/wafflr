@@ -9,51 +9,64 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Appears as "Read with Wafflr" in the text-selection menu of other apps (Android's PROCESS_TEXT).
- * This is the reliable way to read selected text, even in apps that hide selections from
- * accessibility services.
+ * "Read with Wafflr" in the text-selection menu of apps that support it (e.g. Chrome), and in
+ * the Share menu, which almost every app offers.
+ * Shows a small panel with Pause and Stop; closing it keeps reading, and the floating button
+ * keeps the controls.
  */
-class ReadAloudActivity : Activity() {
+class ReadAloudActivity : Activity(), ReaderListener {
     private lateinit var status: TextView
+    private lateinit var pause: Button
+    private val reader get() = WafflrApp.instance.reader
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty().trim()
-        val from = callingPackage ?: referrer?.host ?: "unknown app"
-        SelectionLog.add("[$from] SELECTION MENU 'Read with Wafflr': ${text.length} chars received")
+        val shared = intent.action == Intent.ACTION_SEND
+        val text = (if (shared) intent.getCharSequenceExtra(Intent.EXTRA_TEXT) else intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
+            ?.toString().orEmpty().trim()
+        val from = callingPackage ?: referrer?.host ?: "another app"
 
         val pad = (16 * resources.displayMetrics.density).toInt()
         status = TextView(this).apply { textSize = 16f; setPadding(0, 0, 0, pad) }
+        pause = Button(this).apply { setText("Pause"); setOnClickListener { reader.togglePause() } }
         val stop = Button(this).apply {
             setText("Stop")
-            setOnClickListener {
-                WafflrApp.instance.speech.stop()
-                finish()
-            }
+            setOnClickListener { reader.stop(); finish() }
         }
+        val close = Button(this).apply { setText("Hide"); setOnClickListener { finish() } }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(pad * 2, pad * 2, pad * 2, pad)
             addView(status)
-            addView(stop)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(pause); addView(stop); addView(close)
+            })
         })
-        setFinishOnTouchOutside(false)
 
         if (text.isEmpty()) {
             status.text = "No text was received."
             return
         }
-        val prefs = Prefs(this)
-        val voice = prefs.voice
-        status.text = "Reading with ${voice.label}…"
-        WafflrApp.instance.speech.speak(text, voice, prefs.speed, prefs.threads, object : SpeechListener {
-            override fun onStatus(text: String) = runOnUiThread { status.text = text }
-            override fun onDone(result: SpeechResult) = runOnUiThread {
-                prefs.results = "From selection menu ($from):\n" + result.summary() + "\n\n" + prefs.results
-                if (!isFinishing) finish()
-            }
-            override fun onError(message: String) = runOnUiThread { status.text = "Error: $message" }
-        })
+        val p = WafflrApp.instance.prefs
+        reader.read(text, p.voice, p.speed, p.threads, if (shared) "shared from $from" else "selection in $from")
     }
+
+    override fun onStart() { super.onStart(); reader.addListener(this) }
+    override fun onStop() { reader.removeListener(this); super.onStop() }
+
+    override fun onStatus(status: ReaderStatus) {
+        this.status.text = when (status.state) {
+            ReaderState.PREPARING -> status.message.ifEmpty { "Getting ready…" }
+            ReaderState.PLAYING -> "Reading ${status.index + 1} of ${status.total}"
+            ReaderState.PAUSED -> "Paused"
+            ReaderState.IDLE -> "Done"
+        }
+        pause.text = if (status.state == ReaderState.PAUSED) "Resume" else "Pause"
+    }
+
+    override fun onFinished(result: SpeechResult) { if (!isFinishing) finish() }
+
+    override fun onError(message: String) { status.text = "Error: $message" }
 }
