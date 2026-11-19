@@ -22,14 +22,17 @@ import kotlin.math.abs
 /**
  * Wafflr's floating controls, drawn over every app.
  *
- *  - The Wafflr logo always stays on screen at the edge. Tap it to open or close the controls;
- *    drag it to move them; long-press it to open the Wafflr app.
- *  - When open, the speaker button slides up out of the logo. Tap it to read the whole screen
- *    (never the clipboard); while reading it becomes pause / resume.
+ *  - The Wafflr logo always stays on screen at the edge, small and faded. Tap it to open or
+ *    close the controls (it just turns solid; it never moves); drag it to move; long-press it
+ *    to open the Wafflr app.
+ *  - When open, the speaker button slides out of the logo: upwards, or downwards when the logo
+ *    is near the top of the screen. Tap it to read the whole screen (never the clipboard);
+ *    while reading it becomes pause / resume.
  *  - Option buttons slide out beside the speaker, towards the middle of the screen:
  *    "draw a box" and "draw a shape" when idle, then previous / next / stop while reading.
  *
- * Every button is the same size, colour and icon style.
+ * The logo and the controls are two separate overlay windows, so opening and closing the
+ * controls never resizes (and so never shifts) the logo's window.
  */
 class FloatingBubble(
     private val context: Context,
@@ -46,6 +49,8 @@ class FloatingBubble(
     private val size = dp(52)
     private val logoSize = dp(38) // smaller than the buttons, and faded until opened
     private val gap = dp(10)
+    private val pad = dp(6) // room for shadows around every button
+    private val inset = (size - logoSize) / 2 // lines the logo's centre up with the speaker's
 
     private val logo = RoundButton(R.drawable.ic_wafflr, "Wafflr: show or hide controls")
     private val speaker = RoundButton(R.drawable.ic_speaker, "Read aloud").apply { setOnClickListener { onSpeakerTap() } }
@@ -53,25 +58,29 @@ class FloatingBubble(
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
     }
-    private val topRow = LinearLayout(context).apply {
+    private val row = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
     }
-    private val root = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(6), dp(6), dp(6), dp(6)) // room for shadows
-    }
+    private val logoRoot = FrameLayout(context)
+    private val controlsRoot = FrameLayout(context).apply { setPadding(pad, pad, pad, pad) }
 
-    private val params = WindowManager.LayoutParams(
+    private fun overlayParams() = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
         PixelFormat.TRANSLUCENT,
     )
+    private val logoParams = overlayParams()
+    private val controlsParams = overlayParams()
 
     private var shown = false
+    private var hidden = false
+    private var controlsAdded = false
     private var expanded = false
+    private var below = false // controls open below the logo (when it's near the top)
     private var openedForReading = false
     private var state = ReaderState.IDLE
     private var optionsFor: Boolean? = null // which set of options is showing: true = playback
@@ -79,10 +88,17 @@ class FloatingBubble(
     /** Options slide out towards the middle of the screen: to the left when docked on the right. */
     private val onRight get() = prefs.bubbleRight
 
+    private val screen get() = wm.currentWindowMetrics.bounds
+    private val statusBar get() = wm.currentWindowMetrics.windowInsets
+        .getInsets(android.view.WindowInsets.Type.statusBars()).top
+
+    /** Height of the logo's window. */
+    private val logoWindowH get() = logoSize + 2 * pad
+
     fun show() {
         if (shown) return
         build()
-        wm.addView(root, params)
+        wm.addView(logoRoot, logoParams)
         shown = true
         reader.addListener(this)
     }
@@ -90,50 +106,52 @@ class FloatingBubble(
     fun hide() {
         if (!shown) return
         reader.removeListener(this)
-        try { wm.removeView(root) } catch (_: Throwable) {}
+        removeControls()
+        try { wm.removeView(logoRoot) } catch (_: Throwable) {}
         shown = false
     }
 
     /** Hides the controls without removing them, e.g. while taking a screenshot. */
     fun setHidden(hidden: Boolean) {
-        root.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+        this.hidden = hidden
+        val v = if (hidden) View.INVISIBLE else View.VISIBLE
+        logoRoot.visibility = v
+        controlsRoot.visibility = v
     }
 
     fun collapse() = setExpanded(false)
 
     private fun build() {
-        root.removeAllViews()
-        topRow.removeAllViews()
-        root.gravity = if (onRight) Gravity.END else Gravity.START
+        // Logo window: just the logo, at a fixed spot on the edge.
+        logoRoot.removeAllViews()
+        val edge = pad + inset
+        logoRoot.setPadding(if (onRight) pad else edge, pad, if (onRight) edge else pad, pad)
+        logoRoot.addView(logo, FrameLayout.LayoutParams(logoSize, logoSize))
+        logo.alpha = logoAlpha()
+        logo.setOnTouchListener(DragHandler())
+        logoParams.gravity = Gravity.TOP or if (onRight) Gravity.END else Gravity.START
+        logoParams.x = 0
+        logoParams.y = prefs.bubbleY.takeIf { it >= 0 }?.let { clampY(it) } ?: (screen.height() * 0.6).toInt()
 
+        // Controls window: speaker plus options, beside the speaker towards the middle.
+        controlsRoot.removeAllViews()
+        row.removeAllViews()
         val optionsLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         if (onRight) {
-            topRow.addView(options, optionsLp)
-            topRow.addView(speaker, buttonLp())
+            row.addView(options, optionsLp)
+            row.addView(speaker, buttonLp())
         } else {
-            topRow.addView(speaker, buttonLp())
-            topRow.addView(options, optionsLp)
+            row.addView(speaker, buttonLp())
+            row.addView(options, optionsLp)
         }
-        root.addView(topRow, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            bottomMargin = gap
-        })
-        // Centre the smaller logo under the speaker.
-        root.addView(logo, LinearLayout.LayoutParams(logoSize, logoSize).apply {
-            val inset = (size - logoSize) / 2
-            if (onRight) rightMargin = inset else leftMargin = inset
-        })
-        logo.alpha = logoAlpha()
-        topRow.visibility = if (expanded) View.VISIBLE else View.GONE
+        controlsRoot.addView(row, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, size))
+        controlsParams.gravity = logoParams.gravity
+        controlsParams.x = 0
         optionsFor = null
         refreshOptions(animate = false)
-        logo.setOnTouchListener(DragHandler())
-
-        // Anchored to the bottom so the logo stays put while the controls open above it.
-        params.gravity = Gravity.BOTTOM or if (onRight) Gravity.END else Gravity.START
-        params.x = 0
-        val screenH = wm.currentWindowMetrics.bounds.height()
-        params.y = prefs.bubbleY.takeIf { it >= 0 }?.coerceIn(0, screenH - size * 2) ?: (screenH * 0.3).toInt()
     }
+
+    private fun clampY(y: Int) = y.coerceIn(statusBar, screen.height() - logoWindowH)
 
     private fun buttonLp() = LinearLayout.LayoutParams(size, size)
 
@@ -146,28 +164,59 @@ class FloatingBubble(
         logo.animate().alpha(logoAlpha()).setDuration(200).start()
     }
 
-    private fun setExpanded(open: Boolean) {
+    /** Puts the controls window just above the logo, or just below it if there isn't room. */
+    private fun placeControls() {
+        val logoTop = logoParams.y + pad
+        val aboveY = logoTop - gap - size - pad
+        below = aboveY < statusBar
+        controlsParams.y = if (below) logoTop + logoSize + gap - pad else aboveY
+    }
+
+    private fun addControls() {
+        placeControls()
+        controlsRoot.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+        if (controlsAdded) {
+            wm.updateViewLayout(controlsRoot, controlsParams)
+        } else {
+            wm.addView(controlsRoot, controlsParams)
+            controlsAdded = true
+        }
+    }
+
+    private fun removeControls() {
+        if (!controlsAdded) return
+        try { wm.removeView(controlsRoot) } catch (_: Throwable) {}
+        controlsAdded = false
+    }
+
+    /** How far the speaker travels as it slides out of the logo. */
+    private fun riseDistance() = (if (below) -1 else 1) * (size + gap).toFloat()
+
+    private fun setExpanded(open: Boolean, animate: Boolean = true) {
         if (open == expanded) return
         expanded = open
         if (!open) openedForReading = false
         fadeLogo()
         speaker.animate().cancel()
         if (open) {
-            topRow.visibility = View.VISIBLE
-            // The speaker rises out of the logo...
-            speaker.translationY = (size + gap).toFloat()
+            addControls()
+            // The speaker slides out of the logo...
+            speaker.translationY = riseDistance()
             speaker.alpha = 0f
-            speaker.animate().translationY(0f).alpha(1f).setDuration(220).setInterpolator(DecelerateInterpolator()).start()
+            speaker.animate().translationY(0f).alpha(1f).setDuration(220).setStartDelay(0)
+                .setInterpolator(DecelerateInterpolator()).start()
             // ...then the options slide out from behind it.
             slideOptionsIn(delay = 120)
+        } else if (!animate) {
+            removeControls()
         } else {
             val dir = if (onRight) 1 else -1
             for (i in 0 until options.childCount) {
                 val v = options.getChildAt(i)
-                v.animate().translationX(dir * distanceToSpeaker(i)).alpha(0f).setDuration(150).start()
+                v.animate().translationX(dir * distanceToSpeaker(i)).alpha(0f).setStartDelay(0).setDuration(150).start()
             }
-            speaker.animate().translationY((size + gap).toFloat()).alpha(0f).setDuration(180).setStartDelay(80)
-                .withEndAction { if (!expanded) topRow.visibility = View.GONE }.start()
+            speaker.animate().translationY(riseDistance()).alpha(0f).setDuration(180).setStartDelay(80)
+                .withEndAction { if (!expanded) removeControls() }.start()
         }
     }
 
@@ -320,7 +369,7 @@ class FloatingBubble(
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.rawX; downY = e.rawY
-                    startY = params.y
+                    startY = logoParams.y
                     dragging = false; longPressed = false
                     main.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
                 }
@@ -332,9 +381,15 @@ class FloatingBubble(
                         main.removeCallbacks(longPress)
                     }
                     if (dragging) {
-                        // Anchored to the bottom: moving the finger down lowers y.
-                        params.y = (startY - dy).toInt().coerceAtLeast(0)
-                        wm.updateViewLayout(root, params)
+                        logoParams.y = clampY((startY + dy).toInt())
+                        wm.updateViewLayout(logoRoot, logoParams)
+                        if (controlsAdded && expanded) {
+                            // The open controls follow the logo (flipping below it near the top).
+                            val wasBelow = below
+                            placeControls()
+                            if (below != wasBelow) speaker.translationY = 0f
+                            wm.updateViewLayout(controlsRoot, controlsParams)
+                        }
                     }
                 }
                 MotionEvent.ACTION_UP -> {
@@ -342,11 +397,14 @@ class FloatingBubble(
                     if (dragging) {
                         val screenW = wm.currentWindowMetrics.bounds.width()
                         val right = e.rawX > screenW / 2
-                        prefs.bubbleY = params.y
+                        prefs.bubbleY = logoParams.y
                         if (right != prefs.bubbleRight) {
+                            val wasOpen = expanded
+                            setExpanded(false, animate = false)
                             prefs.bubbleRight = right
                             build() // rebuild mirrored for the other side
-                            wm.updateViewLayout(root, params)
+                            wm.updateViewLayout(logoRoot, logoParams)
+                            if (wasOpen) setExpanded(true)
                         }
                     } else if (!longPressed) {
                         v.performClick()
