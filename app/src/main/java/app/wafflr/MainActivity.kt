@@ -28,9 +28,13 @@ class MainActivity : Activity(), ReaderListener {
     private lateinit var serviceStatus: TextView
     private lateinit var shortcutWarning: LinearLayout
     private lateinit var bubbleSwitch: Switch
-    private lateinit var packStatus: TextView
     private lateinit var voiceSpinner: Spinner
     private lateinit var installedList: LinearLayout
+    private lateinit var availableList: LinearLayout
+    private var spinnerVoices: List<Voice> = emptyList()
+    /** The voice being downloaded now (one at a time), and its latest progress line. */
+    private var downloading: VoicePack? = null
+    private var downloadStatus = ""
     private lateinit var input: EditText
     private lateinit var speedLabel: TextView
     private lateinit var status: TextView
@@ -95,26 +99,17 @@ class MainActivity : Activity(), ReaderListener {
 
         // --- Voice ----------------------------------------------------------------------------
         root.addView(heading("Voice"))
+        root.addView(body("Choose from the voices on this phone."))
         voiceSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, VoiceCatalog.voices.map { it.label })
-            setSelection(VoiceCatalog.voices.indexOf(prefs.voice))
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    prefs.voice = VoiceCatalog.voices[pos]
-                    refreshPack()
+                    val chosen = spinnerVoices.getOrNull(pos) ?: return
+                    if (chosen != prefs.voice) prefs.voice = chosen
                 }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
         root.addView(voiceSpinner)
-        packStatus = body("")
-        root.addView(packStatus)
-
-        // --- Downloaded voices ------------------------------------------------------------------
-        root.addView(heading("Downloaded voices"))
-        root.addView(body("Voices on this phone, which work offline. Remove one to free up space; it downloads again if you pick it later. The last voice can't be removed."))
-        installedList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(installedList)
         speedLabel = body("")
         root.addView(speedLabel)
         root.addView(SeekBar(this).apply {
@@ -130,6 +125,18 @@ class MainActivity : Activity(), ReaderListener {
             })
         })
         updateSpeedLabel()
+
+        // --- Downloaded voices ------------------------------------------------------------------
+        root.addView(heading("Downloaded voices"))
+        root.addView(body("These work offline. Remove one to free up space. The last voice can't be removed."))
+        installedList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(installedList)
+
+        // --- Download more ----------------------------------------------------------------------
+        root.addView(heading("Download more voices"))
+        root.addView(body("Each voice is about 65 MB. Wi-Fi is best."))
+        availableList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(availableList)
 
         // --- Try it ---------------------------------------------------------------------------
         root.addView(heading("Try it"))
@@ -236,12 +243,7 @@ class MainActivity : Activity(), ReaderListener {
             val remove = button("Remove") { confirmRemove(pack) }.apply {
                 isEnabled = installed.size > 1
             }
-            installedList.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(remove, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            })
+            installedList.addView(voiceRow(label, remove))
         }
     }
 
@@ -268,20 +270,75 @@ class MainActivity : Activity(), ReaderListener {
         if (prefs.voice.pack == pack) {
             val next = VoiceCatalog.voices.first { it.pack == others.first() }
             prefs.voice = next
-            voiceSpinner.setSelection(VoiceCatalog.voices.indexOf(next))
             Toast.makeText(this, "Switched to ${next.label}.", Toast.LENGTH_SHORT).show()
         }
         refreshPack()
     }
 
+    /** Refreshes the voice picker and both voice lists. */
     private fun refreshPack() {
-        refreshInstalled()
-        val pack = prefs.voice.pack
-        packStatus.text = when {
-            app.voices.isInstalled(pack) -> "Voice files installed; works offline."
-            pack.bundled -> "Built-in voice."
-            else -> "Not downloaded yet (${pack.sizeNote}). It downloads the first time you use it."
+        val installed = app.voices.installedPacks()
+        // The chosen voice must always be one that's on the phone.
+        if (installed.isNotEmpty() && prefs.voice.pack !in installed) {
+            prefs.voice = VoiceCatalog.voices.first { it.pack in installed }
         }
+        spinnerVoices = VoiceCatalog.voices.filter { it.pack in installed }
+        voiceSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, spinnerVoices.map { it.label })
+        voiceSpinner.setSelection(spinnerVoices.indexOf(prefs.voice).coerceAtLeast(0))
+        refreshInstalled()
+        refreshAvailable()
+    }
+
+    /** Voices not on the phone yet, each with a Download button. */
+    private fun refreshAvailable() {
+        availableList.removeAllViews()
+        val available = VoiceCatalog.packs.filter { !app.voices.isInstalled(it) }
+        if (available.isEmpty()) {
+            availableList.addView(body("You have every voice."))
+            return
+        }
+        for (pack in available) {
+            val busy = downloading == pack
+            val text = VoiceCatalog.title(pack) + if (busy) "\n$downloadStatus" else ""
+            val label = body(text)
+            val get = button(if (busy) "…" else "Download") { download(pack) }.apply {
+                isEnabled = downloading == null
+            }
+            availableList.addView(voiceRow(label, get))
+        }
+    }
+
+    private fun download(pack: VoicePack) {
+        if (downloading != null) return
+        downloading = pack
+        downloadStatus = "Starting download…"
+        refreshAvailable()
+        Thread({
+            val error = try {
+                app.voices.install(pack) { msg ->
+                    runOnUiThread { downloadStatus = msg; refreshAvailable() }
+                }
+                null
+            } catch (t: Throwable) {
+                t.message ?: t.toString()
+            }
+            runOnUiThread {
+                downloading = null
+                refreshPack()
+                Toast.makeText(
+                    this,
+                    if (error == null) "${VoiceCatalog.title(pack)} is ready." else "Download failed: $error",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }, "voice-download").start()
+    }
+
+    private fun voiceRow(label: View, action: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(action, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 
     private fun refreshResults() {

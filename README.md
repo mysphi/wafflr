@@ -2,7 +2,7 @@
 
 An offline "read this to me" app for Android, built as a reading aid for people with dyslexia.
 A floating button sits over any app; select text or draw around it and Wafflr reads it aloud with
-natural Kokoro or Piper voices, entirely on the phone. A Windows version is planned later.
+natural Piper voices, entirely on the phone. A Windows version is planned later.
 
 Plan: see the project's development plan doc. Status: **Phase 2 (read part of the screen)**.
 
@@ -17,8 +17,10 @@ Plan: see the project's development plan doc. Status: **Phase 2 (read part of th
   the phone (ML Kit, offline), so it also works on PDFs and images.
 - **Share menu**: *Share → Read with Wafflr* works in most apps. Some apps (e.g. Chrome) also
   show *Read with Wafflr* straight in the selection menu.
-- **Voices**: Piper Alan is built in; Piper Jenny and six Kokoro voices download once, then work
-  offline. Pick the voice and speed in the app.
+- **Voices**: Alan is built in; nine more British, Scottish and American Piper voices download
+  once (about 65 MB each), then work offline. The app lists downloaded voices (remove any but
+  the last) and voices to download; the voice picker only offers downloaded ones. Kokoro was
+  tried and dropped: it took about 3 s to start on a mid-range phone.
 
 Phase 0 findings: Piper starts speaking in about 0.3 s on a Nothing Phone 3a, Kokoro in about
 3 s. No app reports text selections to accessibility services, so there is no automatic popup on
