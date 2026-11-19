@@ -3,6 +3,8 @@ package app.wafflr
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
 
@@ -26,7 +28,7 @@ class WafflrService : AccessibilityService() {
     private fun updateBubble() {
         if (app.prefs.bubbleEnabled) {
             if (bubble == null) {
-                bubble = FloatingBubble(this, app.prefs, app.reader) { onBubbleTap() }.also { it.show() }
+                bubble = FloatingBubble(this, app.prefs, app.reader, ::onBubbleTap, ::selectArea).also { it.show() }
             }
         } else {
             bubble?.hide()
@@ -43,6 +45,41 @@ class WafflrService : AccessibilityService() {
             )
         } catch (_: Throwable) {
             readScreen() // couldn't check the clipboard; fall back
+        }
+    }
+
+    private var selector: AreaSelector? = null
+    private val areaReader by lazy { AreaReader(this) }
+
+    /** Lets you drag a box or draw a shape, then reads the text inside it. */
+    fun selectArea() {
+        if (selector != null) return
+        app.reader.stop()
+        bubble?.setHidden(true)
+        selector = AreaSelector(this, app.prefs) { area ->
+            selector = null
+            if (area == null) {
+                bubble?.setHidden(false)
+                return@AreaSelector
+            }
+            // Give the dimmed layer a moment to disappear before the screenshot.
+            Handler(Looper.getMainLooper()).postDelayed({ readArea(area) }, 200)
+        }.also { it.show() }
+    }
+
+    private fun readArea(area: SelectedArea) {
+        areaReader.read(area) { result ->
+            bubble?.setHidden(false)
+            result.onSuccess { text ->
+                if (text.isBlank()) {
+                    Toast.makeText(this, "Wafflr couldn't find any text in that area.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val p = app.prefs
+                    app.reader.read(text, p.voice, p.speed, p.threads, "drawn area")
+                }
+            }.onFailure { e ->
+                Toast.makeText(this, e.message ?: "Couldn't read that area.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -64,6 +101,8 @@ class WafflrService : AccessibilityService() {
 
     override fun onDestroy() {
         app.prefs.prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        selector?.dismiss()
+        selector = null
         bubble?.hide()
         bubble = null
         app.reader.stop()

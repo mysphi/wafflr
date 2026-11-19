@@ -4,13 +4,16 @@ An offline "read this to me" app for Android, built as a reading aid for people 
 A floating button sits over any app; select text or draw around it and Wafflr reads it aloud with
 natural Kokoro or Piper voices, entirely on the phone. A Windows version is planned later.
 
-Plan: see the project's development plan doc. Status: **Phase 1 (core reader)**.
+Plan: see the project's development plan doc. Status: **Phase 2 (read part of the screen)**.
 
 ## Using it
 
 - **Floating button** (over every app): tap to read the screen, tap again to pause or resume,
   long-press to stop, drag to move. While reading, ⏮ and ⏭ go back or forward a sentence.
-- **Part of the screen**: select text and tap *Copy*, then tap the floating button within two
+- **Draw around text**: long-press the floating button, then drag a box (or switch to
+  freehand and draw a shape) around the text. Wafflr screenshots that area and recognises the
+  text on the phone (ML Kit, offline), so it also works on PDFs and images.
+- **Copied text**: select text and tap *Copy*, then tap the floating button within two
   minutes; it reads the copied text instead of the whole screen.
 - **Share menu**: *Share → Read with Wafflr* works in most apps. Some apps (e.g. Chrome) also
   show *Read with Wafflr* straight in the selection menu.

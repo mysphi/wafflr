@@ -35,6 +35,11 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_clip", 0L)
         set(v) = sp.edit().putLong("last_clip", v).apply()
 
+    /** Area reading: freehand shape (true) or box (false). */
+    var areaFreehand: Boolean
+        get() = sp.getBoolean("area_freehand", false)
+        set(v) = sp.edit().putBoolean("area_freehand", v).apply()
+
     fun addResult(text: String) {
         // Keep the newest 30 entries.
         val kept = results.split("\n\n").filter { it.isNotBlank() }.take(29)

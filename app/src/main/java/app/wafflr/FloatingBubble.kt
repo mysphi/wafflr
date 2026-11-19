@@ -22,7 +22,7 @@ import kotlin.math.abs
  * reading.
  *
  *  - Tap: read the screen (or pause/resume while reading)
- *  - Long-press: stop
+ *  - Long-press: draw around the text to read (or stop, while reading)
  *  - Drag: move it; it snaps to the nearest side
  */
 class FloatingBubble(
@@ -30,6 +30,7 @@ class FloatingBubble(
     private val prefs: Prefs,
     private val reader: Reader,
     private val onReadScreen: () -> Unit,
+    private val onSelectArea: () -> Unit,
 ) : ReaderListener {
     private val wm: WindowManager = context.getSystemService(WindowManager::class.java)!!
     private val density = context.resources.displayMetrics.density
@@ -150,7 +151,12 @@ class FloatingBubble(
 
     private fun onLongPress() {
         bubble.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        reader.stop()
+        if (reader.isActive) reader.stop() else onSelectArea()
+    }
+
+    /** Hides the button without removing it, e.g. while taking a screenshot. */
+    fun setHidden(hidden: Boolean) {
+        root.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
     }
 
     private fun control(glyph: String, label: String, action: () -> Unit) = TextView(context).apply {
