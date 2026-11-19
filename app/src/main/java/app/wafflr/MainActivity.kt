@@ -26,6 +26,7 @@ import android.widget.Toast
 class MainActivity : Activity(), ReaderListener {
     private lateinit var prefs: Prefs
     private lateinit var serviceStatus: TextView
+    private lateinit var shortcutWarning: LinearLayout
     private lateinit var bubbleSwitch: Switch
     private lateinit var packStatus: TextView
     private lateinit var input: EditText
@@ -71,6 +72,18 @@ class MainActivity : Activity(), ReaderListener {
             setPadding(0, (12 * dp).toInt(), 0, (12 * dp).toInt())
         }
         root.addView(bubbleSwitch)
+        shortcutWarning = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(body(
+                "⚠ Android's own accessibility shortcut is also on for Wafflr. That is the small Wafflr icon " +
+                "in a grey tab at the edge of the screen. Wafflr doesn't need it, and it gets in the way of the " +
+                "floating controls. To remove it: Accessibility settings → Wafflr → turn off \"Wafflr shortcut\"."
+            ))
+            addView(button("Turn off the extra shortcut") {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            })
+        }
+        root.addView(shortcutWarning)
         root.addView(body(
             "Floating controls: tap the Wafflr logo to open them; drag it to move; long-press it to open this app. " +
             "The speaker reads copied text (if you copied some in the last two minutes) or the whole screen, and becomes pause/resume while reading. " +
@@ -140,12 +153,21 @@ class MainActivity : Activity(), ReaderListener {
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
+    /** True if Android's floating accessibility button is set to launch Wafflr. */
+    private fun systemShortcutOn(): Boolean = try {
+        val targets = Settings.Secure.getString(contentResolver, "accessibility_button_targets").orEmpty()
+        targets.contains(packageName)
+    } catch (_: Throwable) {
+        false
+    }
+
     override fun onResume() {
         super.onResume()
         reader.addListener(this)
         val on = isServiceEnabled()
         serviceStatus.text = if (on) "✓ Wafflr is on" else "✗ Wafflr is off. Turn it on in Accessibility settings (look for Wafflr)."
         bubbleSwitch.isEnabled = on
+        shortcutWarning.visibility = if (systemShortcutOn()) View.VISIBLE else View.GONE
         refreshPack()
         refreshResults()
         val lastCrash = CrashReport.lastCrash(this)

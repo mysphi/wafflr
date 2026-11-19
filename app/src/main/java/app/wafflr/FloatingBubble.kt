@@ -186,12 +186,12 @@ class FloatingBubble(
         optionsFor = playback
         options.removeAllViews()
         val buttons = if (playback) listOf(
-            RoundButton(R.drawable.ic_previous, "Previous sentence").apply { setOnClickListener { reader.previous() } },
-            RoundButton(R.drawable.ic_next, "Next sentence").apply { setOnClickListener { reader.next() } },
-            RoundButton(R.drawable.ic_stop, "Stop").apply { setOnClickListener { reader.stop() } },
+            RoundButton(R.drawable.ic_previous, "Previous sentence", primary = false).apply { setOnClickListener { reader.previous() } },
+            RoundButton(R.drawable.ic_next, "Next sentence", primary = false).apply { setOnClickListener { reader.next() } },
+            RoundButton(R.drawable.ic_stop, "Stop", primary = false).apply { setOnClickListener { reader.stop() } },
         ) else listOf(
-            RoundButton(R.drawable.ic_box, "Drag a box around text to read").apply { setOnClickListener { pickArea(false) } },
-            RoundButton(R.drawable.ic_draw, "Draw around text to read").apply { setOnClickListener { pickArea(true) } },
+            RoundButton(R.drawable.ic_box, "Drag a box around text to read", primary = false).apply { setOnClickListener { pickArea(false) } },
+            RoundButton(R.drawable.ic_draw, "Draw around text to read", primary = false).apply { setOnClickListener { pickArea(true) } },
         )
         for (b in buttons) {
             options.addView(b, buttonLp().apply {
@@ -245,24 +245,29 @@ class FloatingBubble(
         android.widget.Toast.makeText(context, "Wafflr: ${message.lineSequence().first()}", android.widget.Toast.LENGTH_LONG).show()
     }
 
-    /** A round button: same size, colour and icon style everywhere. */
-    private inner class RoundButton(icon: Int, label: String) : FrameLayout(context) {
+    /**
+     * A round button: same size, shape and icon style everywhere. The logo and speaker are solid
+     * blue; the options beside them are pale blue with blue icons, so the main action stands out.
+     * Flat, no outline, a soft shadow.
+     */
+    private inner class RoundButton(icon: Int, label: String, primary: Boolean = true) : FrameLayout(context) {
         private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         private val spinner = ProgressBar(context).apply {
             isIndeterminate = true
-            indeterminateTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(if (primary) Color.WHITE else Color.parseColor(BLUE))
             visibility = View.GONE
         }
 
         init {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(BLUE))
-                setStroke(dp(2), Color.WHITE)
+                setColor(Color.parseColor(if (primary) BLUE else PALE))
             }
-            elevation = dp(4).toFloat()
+            if (!primary) image.setColorFilter(Color.parseColor(BLUE))
+            elevation = dp(3).toFloat()
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
             isClickable = true
-            val iconSize = dp(26)
+            val iconSize = dp(24)
             addView(image, LayoutParams(iconSize, iconSize, Gravity.CENTER))
             addView(spinner, LayoutParams(size - dp(8), size - dp(8), Gravity.CENTER))
             setIcon(icon, label)
@@ -341,5 +346,6 @@ class FloatingBubble(
 
     companion object {
         private const val BLUE = "#2D6CDF"
+        private const val PALE = "#E6EEFC"
     }
 }
