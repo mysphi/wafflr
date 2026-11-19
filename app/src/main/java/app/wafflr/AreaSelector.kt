@@ -15,8 +15,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import kotlin.math.abs
 
 /** The area the user drew, in screen pixels. */
@@ -38,23 +38,18 @@ class AreaSelector(
     private var shown = false
 
     private val canvasView = DrawView(context)
-    private val hint = TextView(context).apply {
-        setTextColor(Color.WHITE)
-        textSize = 15f
-        setPadding(dp(12), 0, dp(12), 0)
+    // Just two round buttons at the top, styled like the floating controls: the current mode
+    // (box or draw; tap it to switch) and cancel.
+    private val modeButton = roundButton(R.drawable.ic_box, primary = true) { toggleMode() }
+    private val cancelButton = roundButton(R.drawable.ic_close, primary = false) { finish(null) }.apply {
+        contentDescription = "Cancel"
     }
-    private val modeButton = pill("") { toggleMode() }
     private val bar = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = GradientDrawable().apply {
-            cornerRadius = dp(24).toFloat()
-            setColor(Color.parseColor("#E6202124"))
-        }
-        setPadding(dp(8), dp(6), dp(8), dp(6))
-        addView(hint)
-        addView(modeButton)
-        addView(pill("✕ Cancel") { finish(null) })
+        setPadding(dp(6), dp(6), dp(6), dp(6)) // room for shadows
+        addView(modeButton, LinearLayout.LayoutParams(dp(52), dp(52)).apply { rightMargin = dp(10) })
+        addView(cancelButton, LinearLayout.LayoutParams(dp(52), dp(52)))
     }
     private val root = FrameLayout(context).apply {
         addView(canvasView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -96,17 +91,22 @@ class AreaSelector(
     }
 
     private fun updateMode() {
-        hint.text = if (freehand) "Draw around the text" else "Drag a box over the text"
-        modeButton.text = if (freehand) "▭ Box instead" else "✎ Draw instead"
+        (modeButton.getChildAt(0) as ImageView).setImageResource(if (freehand) R.drawable.ic_draw else R.drawable.ic_box)
+        modeButton.contentDescription =
+            if (freehand) "Drawing around text. Tap to drag a box instead" else "Dragging a box over text. Tap to draw instead"
     }
 
-    private fun pill(label: String, action: () -> Unit) = TextView(context).apply {
-        text = label
-        textSize = 15f
-        setTextColor(Color.WHITE)
-        gravity = Gravity.CENTER
-        minHeight = dp(44)
-        setPadding(dp(12), 0, dp(12), 0)
+    private fun roundButton(icon: Int, primary: Boolean, action: () -> Unit) = FrameLayout(context).apply {
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(if (primary) "#2D6CDF" else "#E6EEFC"))
+        }
+        elevation = dp(3).toFloat()
+        isClickable = true
+        addView(ImageView(context).apply {
+            setImageResource(icon)
+            if (!primary) setColorFilter(Color.parseColor("#2D6CDF"))
+        }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
         setOnClickListener { action() }
     }
 
