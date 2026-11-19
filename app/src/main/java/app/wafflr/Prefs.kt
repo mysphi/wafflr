@@ -17,6 +17,11 @@ class Prefs(context: Context) {
         get() = sp.getInt("threads", 4)
         set(v) = sp.edit().putInt("threads", v).apply()
 
+    /** Read headings aloud when reading the whole screen. Off by default (Gareth's choice). */
+    var readHeadings: Boolean
+        get() = sp.getBoolean("read_headings", false)
+        set(v) = sp.edit().putBoolean("read_headings", v).apply()
+
     var bubbleEnabled: Boolean
         get() = sp.getBoolean("bubble", true)
         set(v) = sp.edit().putBoolean("bubble", v).apply()

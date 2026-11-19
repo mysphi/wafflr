@@ -80,13 +80,13 @@ class WafflrService : AccessibilityService() {
     }
 
     fun readScreen() {
-        val text = try { ScreenText.read(this) } catch (_: Throwable) { "" }
-        if (text.isBlank()) {
+        val p = app.prefs
+        val found = try { ScreenText.read(this, p.readHeadings) } catch (_: Throwable) { null }
+        if (found == null || found.text.isBlank()) {
             Toast.makeText(this, "Wafflr couldn't find any text to read here.", Toast.LENGTH_SHORT).show()
             return
         }
-        val p = app.prefs
-        app.reader.read(text, p.voice, p.speed, p.threads, "whole screen")
+        app.reader.read(found.text, p.voice, p.speed, p.threads, found.summary())
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {}

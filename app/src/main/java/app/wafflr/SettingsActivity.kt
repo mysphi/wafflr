@@ -70,6 +70,20 @@ class SettingsActivity : WafflrScreen() {
         }
         root.addView(shortcutWarning)
 
+        // --- What Wafflr reads -------------------------------------------------------------------
+        root.addView(heading("What Wafflr reads"))
+        root.addView(body(
+            "When reading the whole screen, Wafflr skips menus, toolbars, buttons, tabs and navigation, " +
+            "and reads just the main text."
+        ))
+        root.addView(Switch(this).apply {
+            text = "Read headings too"
+            textSize = 16f
+            isChecked = prefs.readHeadings
+            setOnCheckedChangeListener { _, on -> prefs.readHeadings = on }
+            setPadding(0, (12 * dp).toInt(), 0, (12 * dp).toInt())
+        })
+
         // --- Test report ----------------------------------------------------------------------
         root.addView(heading("Test report"))
         crash = mono("")
