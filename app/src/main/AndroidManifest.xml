@@ -33,6 +33,13 @@
             android:label="Voices"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".PronunciationsActivity"
+            android:exported="false"
+            android:label="Pronunciations"
+            android:windowSoftInputMode="adjustResize"
+            android:parentActivityName=".SettingsActivity" />
+
         <!-- How to use Wafflr: four short animated steps -->
         <activity
             android:name=".LearnActivity"

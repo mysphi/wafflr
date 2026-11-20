@@ -26,7 +26,11 @@ data class Voice(
     /** Kokoro only: pronunciation dictionary and espeak language for the accent. */
     val lexicon: String = "",
     val lang: String = "",
-)
+) {
+    /** The language the voice speaks, e.g. "en" for en_GB and en_US. Pronunciation fixes are kept per language. */
+    val language: String
+        get() = Regex("piper-([a-z]{2,3})_").find(pack.dirName)?.groupValues?.get(1) ?: "en"
+}
 
 object VoiceCatalog {
     val piperAlan = VoicePack("piper-alan", EngineKind.PIPER, "vits-piper-en_GB-alan-medium", bundled = true, sizeNote = "built in")

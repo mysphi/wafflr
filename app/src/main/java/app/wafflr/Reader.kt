@@ -408,7 +408,7 @@ class Reader(private val context: Context, private val models: Models) {
                     }
                     val t0 = SystemClock.elapsedRealtime()
                     val audio = PitchShift.apply(
-                        models.generate(model, sentences[target], voice.sid, speed), model.sampleRate, tuning.pitch,
+                        models.generate(model, Pronounce.forSpeech(sentences[target], voice.language), voice.sid, speed), model.sampleRate, tuning.pitch,
                     )
                     val took = SystemClock.elapsedRealtime() - t0
                     val plan = if (regions != null) {

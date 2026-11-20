@@ -88,6 +88,27 @@ class Prefs(context: Context) {
         get() = sp.getInt("bubble_top", -1)
         set(v) = sp.edit().putInt("bubble_top", v).apply()
 
+    /** The person's own pronunciations for [lang], one "word<TAB>say as" per line. */
+    fun pronunciations(lang: String): List<Pronounce.Entry> =
+        (sp.getString("pron_$lang", "") ?: "").lines().mapNotNull { line ->
+            val parts = line.split('\t')
+            if (parts.size == 2 && parts[0].isNotBlank()) Pronounce.Entry(parts[0], parts[1]) else null
+        }
+
+    fun setPronunciations(lang: String, entries: List<Pronounce.Entry>) {
+        val clean = entries.map { Pronounce.Entry(it.word.trim().replace(Regex("\\s+"), " "), it.sayAs.trim().replace(Regex("\\s+"), " ")) }
+        sp.edit().putString("pron_$lang", clean.joinToString("\n") { "${it.word}\t${it.sayAs}" }).apply()
+        Pronounce.setUser(lang, clean)
+    }
+
+    /** Hands every saved language's pronunciations to [Pronounce]. Called once at start. */
+    fun loadPronunciations() {
+        for (key in sp.all.keys) if (key.startsWith("pron_")) {
+            val lang = key.removePrefix("pron_")
+            Pronounce.setUser(lang, pronunciations(lang))
+        }
+    }
+
     /** The how-to walkthrough has been shown (it opens by itself once, on first launch). */
     var seenTour: Boolean
         get() = sp.getBoolean("seen_tour", false)

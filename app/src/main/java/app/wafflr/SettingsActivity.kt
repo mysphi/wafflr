@@ -101,6 +101,22 @@ class SettingsActivity : WafflrScreen() {
             addView(divider())
             addView(switchRow("Underline each word", "In apps that say where their words are", prefs.underlineWords) { prefs.underlineWords = it }.first)
         }, margins())
+        root.addView(card(padding = 0).apply {
+            addView(LinearLayout(this@SettingsActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(16.px, 10.px, 16.px, 10.px)
+                minimumHeight = 56.px
+                background = pressable(shape(0x00000000, 0f))
+                setOnClickListener { startActivity(Intent(this@SettingsActivity, PronunciationsActivity::class.java)) }
+                addView(twoLines("Pronunciations", "Fix words the voice says wrongly", titleWeight = 500))
+                addView(android.widget.ImageView(this@SettingsActivity).apply {
+                    setImageResource(R.drawable.ic_back)
+                    rotation = 180f
+                    imageTintList = android.content.res.ColorStateList.valueOf(Paper.SOFT)
+                }, LinearLayout.LayoutParams(20.px, 20.px))
+            })
+        }, margins(8))
         root.addView(note(
             "Headphone buttons and the lock screen can pause, skip and stop. For a quick start, add the Wafflr tile " +
                 "to Quick Settings: pull down the shade, tap the pencil, and drag Wafflr in.", 13f,

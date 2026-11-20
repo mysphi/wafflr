@@ -19,6 +19,7 @@ class WafflrApp : Application() {
         instance = this
         CrashReport.install(this)
         prefs = Prefs(this)
+        prefs.loadPronunciations()
         voices = VoiceStore(this)
         models = Models(voices)
         reader = Reader(this, models)
