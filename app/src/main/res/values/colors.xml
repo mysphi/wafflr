@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="wafflr_blue">#2D6CDF</color>
+    <color name="paper">#FBF7EE</color>
+    <color name="ink">#1E1B16</color>
 </resources>

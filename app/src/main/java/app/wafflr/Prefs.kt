@@ -88,6 +88,11 @@ class Prefs(context: Context) {
         get() = sp.getInt("bubble_top", -1)
         set(v) = sp.edit().putInt("bubble_top", v).apply()
 
+    /** The how-to walkthrough has been shown (it opens by itself once, on first launch). */
+    var seenTour: Boolean
+        get() = sp.getBoolean("seen_tour", false)
+        set(v) = sp.edit().putBoolean("seen_tour", v).apply()
+
     /** Area reading: freehand shape (true) or box (false). */
     var areaFreehand: Boolean
         get() = sp.getBoolean("area_freehand", false)

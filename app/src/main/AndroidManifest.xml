@@ -27,6 +27,19 @@
             android:label="Wafflr settings"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".VoicesActivity"
+            android:exported="false"
+            android:label="Voices"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- How to use Wafflr: four short animated steps -->
+        <activity
+            android:name=".LearnActivity"
+            android:exported="false"
+            android:label="How to use Wafflr"
+            android:parentActivityName=".MainActivity" />
+
         <!-- "Read with Wafflr" in other apps' selection and Share menus: invisible, it just
              starts reading and the floating controls take over. -->
         <activity
