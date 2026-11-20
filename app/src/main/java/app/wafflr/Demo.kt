@@ -24,6 +24,7 @@ import kotlin.math.min
  */
 class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
     enum class Kind(val ms: Long, val description: String) {
+        CARD_WAFFLE(4000, "The waffle tucked at the screen edge, tapped to open its buttons"),
         CARD_READ(3200, "A highlight moving down a page of text"),
         CARD_DRAW(3000, "A pen line drawn around a paragraph"),
         CARD_SELECT(3000, "A selection menu with Read with Wafflr"),
@@ -91,7 +92,7 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
 
     override fun onDraw(c: Canvas) {
         when (kind) {
-            Kind.CARD_READ, Kind.CARD_DRAW, Kind.CARD_SELECT -> {
+            Kind.CARD_WAFFLE, Kind.CARD_READ, Kind.CARD_DRAW, Kind.CARD_SELECT -> {
                 c.save(); c.scale(d, d); drawCard(c); c.restore()
             }
             else -> drawStep(c)
@@ -103,15 +104,34 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
     private fun drawCard(c: Canvas) {
         val w = width / d
         when (kind) {
-            Kind.CARD_READ -> {
+            Kind.CARD_WAFFLE -> {
                 bars(c, 16f, 22f, w - 32, 6f, 7f, 0xFFCDBFA4.toInt(), 0.9f, 1f, 0.7f, -10f, 0.95f, 0.8f, 0.6f)
+                // Tucked at the edge, tapped out, tapped open, then tucked away again.
+                val lx = w - 26f
+                val ly = 104f
+                val out = kf(t, 0f, 0f, .16f, 0f, .24f, 1f, .86f, 1f, .94f, 0f)
+                val open = kf(t, 0f, 0f, .4f, 0f, .48f, 1f, .76f, 1f, .82f, 0f)
+                if (open > 0) {
+                    val sy = lerp(ly, ly - 32f, open)
+                    val slide = kf(open, 0f, 0f, .5f, 0f, 1f, 1f)
+                    circleIcon(c, lx - 56f * slide, sy, 12f, R.drawable.ic_box, 0xFFE6EEFC.toInt(), Paper.BLUE, 11f, slide)
+                    circleIcon(c, lx - 28f * slide, sy, 12f, R.drawable.ic_draw, 0xFFE6EEFC.toInt(), Paper.BLUE, 11f, slide)
+                    circleIcon(c, lx, sy, 12f, R.drawable.ic_speaker, Paper.BLUE, 0xFFFFFFFF.toInt(), 11f, open)
+                }
+                val la = kf(t, 0f, .55f, .36f, .55f, .4f, 1f, .8f, 1f, .84f, .55f)
+                circleIcon(c, lerp(w + 4f, lx, out), ly, 14f, R.drawable.ic_wafflr, Paper.BLUE, 0xFFFFFFFF.toInt(), 13f, la)
+                tap(c, w - 6f, ly, .06f, .18f, 0.7f)
+                tap(c, lx, ly, .3f, .42f, 0.7f)
+            }
+            Kind.CARD_READ -> {
+                bars(c, 16f, 22f, w - 32, 6f, 7f, 0xFFA9BEDD.toInt(), 0.9f, 1f, 0.7f, -10f, 0.95f, 0.8f, 0.6f)
                 // One paragraph at a time: the box goes, then appears on the next.
                 if (t < .47f) { r.set(10f, 16f, w - 10, 60f); highlight(c, r, 8f, kf(t, 0f, 0f, .04f, 1f, .43f, 1f, .47f, 0f)) }
                 else if (t > .53f) { r.set(10f, 65f, w - 10, 109f); highlight(c, r, 8f, kf(t, .53f, 0f, .57f, 1f, .96f, 1f, 1f, 0f)) }
                 playBadge(c, w)
             }
             Kind.CARD_DRAW -> {
-                bars(c, 16f, 40f, w - 32, 6f, 7f, 0xFFA9BEDD.toInt(), 1f, 0.85f, 0.92f, 0.6f)
+                bars(c, 16f, 40f, w - 32, 6f, 7f, 0xFFB9CBB0.toInt(), 1f, 0.85f, 0.92f, 0.6f)
                 val path = Path().apply {
                     moveTo(20f, 34f); cubicTo(60f, 20f, 120f, 22f, 134f, 40f)
                     cubicTo(148f, 58f, 128f, 86f, 92f, 90f); cubicTo(56f, 94f, 14f, 88f, 12f, 62f)
@@ -232,12 +252,12 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
     }
 
     /** A finger tap: a ring that grows and fades between [from] and [to]. */
-    private fun tap(c: Canvas, x: Float, y: Float, from: Float, to: Float) {
+    private fun tap(c: Canvas, x: Float, y: Float, from: Float, to: Float, size: Float = 1f) {
         if (t < from || t > to) return
         val f = (t - from) / (to - from)
         val a = if (f < 0.3f) f / 0.3f * 0.8f else 0.8f * (1 - (f - 0.3f) / 0.7f)
-        stroke.color = Paper.INK; stroke.strokeWidth = 3f; stroke.alpha = (a * 255).toInt()
-        c.drawCircle(x, y, 21.5f * (0.6f + 1.2f * f), stroke)
+        stroke.color = Paper.INK; stroke.strokeWidth = 3f * size; stroke.alpha = (a * 255).toInt()
+        c.drawCircle(x, y, 21.5f * size * (0.6f + 1.2f * f), stroke)
     }
 
     private fun step2(c: Canvas) {
@@ -416,7 +436,7 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
     companion object {
         /** The frame shown when animations are turned off: one that explains the step. */
         private val STILL = mapOf(
-            Kind.CARD_READ to 0.2f, Kind.CARD_DRAW to 0.7f, Kind.CARD_SELECT to 0.6f,
+            Kind.CARD_WAFFLE to 0.6f, Kind.CARD_READ to 0.2f, Kind.CARD_DRAW to 0.7f, Kind.CARD_SELECT to 0.6f,
             Kind.STEP1 to 0.5f, Kind.STEP2 to 0.25f, Kind.STEP3 to 0.4f, Kind.STEP4 to 0.6f,
         )
 

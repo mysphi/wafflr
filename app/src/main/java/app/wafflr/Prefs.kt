@@ -99,9 +99,15 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean("area_freehand", v).apply()
 
     fun addResult(text: String) {
-        // Keep the newest 30 entries.
-        val kept = results.split("\n\n").filter { it.isNotBlank() }.take(29)
-        results = (listOf(text) + kept).joinToString("\n\n")
+        // Keep the newest 30 entries, and no more than about 40,000 characters in all.
+        val kept = ArrayList<String>()
+        var size = text.length
+        for (entry in results.split("\n\n").filter { it.isNotBlank() }) {
+            if (kept.size >= 29 || size + entry.length > MAX_RESULT_CHARS) break
+            kept += entry
+            size += entry.length + 2
+        }
+        results = (listOf(text.take(MAX_RESULT_CHARS)) + kept).joinToString("\n\n")
     }
 
     val prefs get() = sp
@@ -110,3 +116,6 @@ class Prefs(context: Context) {
         get() = sp.getString("results", "") ?: ""
         set(v) = sp.edit().putString("results", v).apply()
 }
+
+/** The test report is kept small: at most this many characters. */
+private const val MAX_RESULT_CHARS = 40_000

@@ -155,7 +155,7 @@ class VoicesActivity : WafflrScreen(), ReaderListener {
 
     private fun hear(v: Voice) {
         reader.stop()
-        reader.read("Hello, I'm ${Paper.name(v)}.", v, prefs.speed, prefs.threads, "Sample", prefs.tuning)
+        reader.read("Hi there, I'm ${Paper.name(v)}! Lovely to meet you.", v, prefs.speed, prefs.threads, "Sample", prefs.tuning)
     }
 
     private fun confirmRemove(pack: VoicePack) {

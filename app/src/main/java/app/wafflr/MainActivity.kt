@@ -67,7 +67,7 @@ class MainActivity : WafflrScreen(), ReaderListener {
         root.addView(text("Any screen,\nread aloud.", 36f, weight = 500, serif = true, lineSpacing = 1.0f).apply {
             letterSpacing = -0.02f
         }, margins(18))
-        root.addView(note("Tap the waffle in any app. Wafflr reads the main text and follows along with a highlight.", 15f), margins(10))
+        root.addView(note("Tap the waffle in any app. Wafflr reads the text and follows along with a highlight.", 15f), margins(10))
 
         // --- See how it works ------------------------------------------------------------------
         root.addView(LinearLayout(this).apply {
@@ -89,8 +89,9 @@ class MainActivity : WafflrScreen(), ReaderListener {
             setPadding(20.px, 0, 8.px, 0)
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
-                addView(howCard("Read the screen", "Whole page", 0xFFEFE6D3.toInt(), DemoView.Kind.CARD_READ, 1))
-                addView(howCard("Draw around text", "Just one part", 0xFFDCE7F7.toInt(), DemoView.Kind.CARD_DRAW, 2))
+                addView(howCard("Tap the waffle", "Open the controls", 0xFFEFE6D3.toInt(), DemoView.Kind.CARD_WAFFLE, 0))
+                addView(howCard("Read the screen", "Whole page", 0xFFDCE7F7.toInt(), DemoView.Kind.CARD_READ, 1))
+                addView(howCard("Draw around text", "Just one part", 0xFFE4EEDF.toInt(), DemoView.Kind.CARD_DRAW, 2))
                 addView(howCard("Select and read", "From the menu", 0xFFF4DFD3.toInt(), DemoView.Kind.CARD_SELECT, 3))
             })
         })
@@ -309,7 +310,7 @@ class MainActivity : WafflrScreen(), ReaderListener {
         if (mine == "Sample" && reader.status.state != ReaderState.IDLE) { reader.stop(); return }
         val v = prefs.voice
         mine = "Sample"
-        reader.read("Hello, I'm ${Paper.name(v)}. Tap the waffle in any app, and I'll read it to you.",
+        reader.read("Hi there, I'm ${Paper.name(v)}! Tap the waffle in any app, and I'll happily read it to you.",
             v, prefs.speed, prefs.threads, "Sample", prefs.tuning)
     }
 
@@ -357,9 +358,9 @@ class MainActivity : WafflrScreen(), ReaderListener {
 
     companion object {
         const val SAMPLE =
-            "The morning train was late again, so Sarah decided to walk. It was only two miles, " +
-            "and the rain had finally stopped. Along the way, she noticed things she'd never seen " +
-            "from the carriage window: a bakery with a hand-painted sign, an old church clock stuck " +
-            "at a quarter past three, and a fox trotting calmly across the park as if it owned the place."
+            "Good news: the kettle's on and the biscuits are out! Today is the perfect day to try " +
+            "something new. Maybe it's a recipe with far too much cheese, a walk to the top of the " +
+            "hill just to see the view, or a dance in the kitchen when nobody's watching. " +
+            "Whatever you pick, I'll be right here, ready to read it out loud."
     }
 }

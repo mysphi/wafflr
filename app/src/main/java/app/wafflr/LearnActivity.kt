@@ -28,7 +28,7 @@ class LearnActivity : WafflrScreen() {
         Step(DemoView.Kind.STEP2, 0xFFDCE7F7.toInt(), "Hear the whole page, and follow along",
             "Wafflr skips menus and adverts and reads the main text. Pause, skip back or skip ahead any time."),
         Step(DemoView.Kind.STEP3, 0xFFE4EEDF.toInt(), "Just want one part? Draw around it",
-            "Pick the pen or the box, then circle the text. Works on photos and PDFs too."),
+            "Pick the pen or the box, then draw a shape around the text. Works on photos and PDFs too."),
         Step(DemoView.Kind.STEP4, 0xFFF4DFD3.toInt(), "Selected some text? Wafflr is in the menu",
             "In Chrome and other apps that offer it, choose Read with Wafflr. Anywhere else, use Share."),
     )
