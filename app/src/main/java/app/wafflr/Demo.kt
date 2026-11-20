@@ -27,8 +27,8 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
         CARD_READ(3200, "A highlight moving down a page of text"),
         CARD_DRAW(3000, "A pen line drawn around a paragraph"),
         CARD_SELECT(3000, "A selection menu with Read with Wafflr"),
-        STEP1(5000, "Animation: tapping the waffle at the edge of the screen opens the box, pen and speaker buttons."),
-        STEP2(6000, "Animation: a yellow box moves from paragraph to paragraph, and a line under each word follows the voice."),
+        STEP1(8000, "Animation: the waffle is tucked into the screen edge. A tap brings it out, another tap opens the speaker, box and pen buttons above it, then it tucks away again."),
+        STEP2(7000, "Animation: a yellow box surrounds the paragraph being read and a line under each word follows the voice. When the paragraph ends the box goes, then appears on the next one."),
         STEP3(5000, "Animation: a line is drawn loosely around a paragraph, then the whole paragraph is highlighted."),
         STEP4(6000, "Animation: text is selected, Read with Wafflr is chosen from the menu, and the text is highlighted."),
     }
@@ -105,9 +105,9 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
         when (kind) {
             Kind.CARD_READ -> {
                 bars(c, 16f, 22f, w - 32, 6f, 7f, 0xFFCDBFA4.toInt(), 0.9f, 1f, 0.7f, -10f, 0.95f, 0.8f, 0.6f)
-                val y = kf(t, 0f, 0f, .45f, 34f, .9f, 0f)
-                r.set(10f, 16f + y, w - 10, 50f + y)
-                highlight(c, r, 8f)
+                // One paragraph at a time: the box goes, then appears on the next.
+                if (t < .47f) { r.set(10f, 16f, w - 10, 60f); highlight(c, r, 8f, kf(t, 0f, 0f, .04f, 1f, .43f, 1f, .47f, 0f)) }
+                else if (t > .53f) { r.set(10f, 65f, w - 10, 109f); highlight(c, r, 8f, kf(t, .53f, 0f, .57f, 1f, .96f, 1f, 1f, 0f)) }
                 playBadge(c, w)
             }
             Kind.CARD_DRAW -> {
@@ -164,10 +164,14 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
         c.restore()
         // Callouts sit on the panel, outside the phone.
         when (kind) {
-            Kind.STEP1 -> callout(c, "Tap the waffle", 22 * d, 22 * d, dark = true)
+            Kind.STEP1 -> callout(c, when {
+                t < .26f -> "Tucked into the edge"
+                t < .76f -> "Tap the waffle"
+                else -> "It tucks away again"
+            }, 22 * d, 22 * d, dark = true)
             Kind.STEP2 -> {
                 callout(c, "Tap the speaker", 22 * d, 22 * d, dark = true)
-                callout(c, "The box and underline follow the voice", width - 18 * d - 134 * d, 150 * d, dark = false, maxW = 110 * d)
+                callout(c, "The box and underline follow the voice", width - 18 * d - 134 * d, height * 0.6f, dark = false, maxW = 110 * d)
             }
             Kind.STEP3 -> callout(c, "Loose is fine: whole paragraphs are read", 22 * d, -22 * d, dark = true)
             Kind.STEP4 -> callout(c, "Select, then Read with Wafflr", 22 * d, 22 * d, dark = true)
@@ -202,47 +206,63 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
     private fun step1(c: Canvas) {
         val col = 0xFFE6E0D4.toInt()
         page(c, listOf(title(), gap(6f)) + lines(col, 1f, .92f, .96f, .6f) + gap(8f) + lines(col, .98f, .88f, .94f, .4f))
-        // Controls slide out beside the waffle.
-        val a = kf(t, 0f, 0f, .22f, 0f, .34f, 1f, .84f, 1f, .94f, 0f)
-        val dx = kf(t, 0f, 40f, .22f, 40f, .34f, 0f, .84f, 0f, .94f, 40f)
-        if (a > 0) {
-            val items = listOf(R.drawable.ic_box to false, R.drawable.ic_draw to false, R.drawable.ic_speaker to true)
-            for ((i, item) in items.withIndex()) {
-                circleIcon(c, 77f + i * 36f + dx, 211f, 15f, item.first, if (item.second) Paper.BLUE else 0xFFE6EEFC.toInt(),
-                    if (item.second) 0xFFFFFFFF.toInt() else Paper.BLUE, 14f, a)
+        // The waffle starts tucked into the right edge, slides out when tapped, and tucks away at the end.
+        val lx = 191f
+        val ly = 300f
+        val out = kf(t, 0f, 0f, .14f, 0f, .2f, 1f, .82f, 1f, .9f, 0f)
+        val cx = lerp(lx + 32f, lx, out)
+        // Controls: the speaker rises out of the waffle, then the box and pen slide out towards the middle.
+        val open = kf(t, 0f, 0f, .3f, 0f, .38f, 1f, .7f, 1f, .76f, 0f)
+        if (open > 0) {
+            val sy = lerp(ly, ly - 17f - 10f - 15f, open)
+            val items = listOf(R.drawable.ic_box, R.drawable.ic_draw)
+            for ((i, icon) in items.withIndex()) {
+                val dx = (2 - i) * 36f * kf(open, 0f, 0f, .5f, 0f, 1f, 1f)
+                circleIcon(c, lx - dx, sy, 15f, icon, 0xFFE6EEFC.toInt(), Paper.BLUE, 14f, kf(open, 0f, 0f, .5f, 0f, 1f, 1f))
             }
+            circleIcon(c, lx, sy, 15f, R.drawable.ic_speaker, Paper.BLUE, 0xFFFFFFFF.toInt(), 14f, open)
         }
-        // The waffle, brightening when tapped.
-        val la = kf(t, 0f, .5f, .18f, .5f, .24f, 1f, .88f, 1f, 1f, .5f)
-        circleIcon(c, 191f, 253f, 17f, R.drawable.ic_wafflr, Paper.BLUE, 0xFFFFFFFF.toInt(), 16f, la)
-        // A finger tap: a ring that grows and fades.
-        val ra = kf(t, 0f, 0f, .12f, 0f, .18f, .8f, .34f, 0f)
-        if (ra > 0) {
-            val sc = kf(t, 0f, .6f, .12f, .6f, .34f, 1.8f)
-            stroke.color = Paper.INK; stroke.strokeWidth = 3f; stroke.alpha = (ra * 255).toInt()
-            c.drawCircle(191f, 253f, 21.5f * sc, stroke)
-        }
+        // Faded while idle, solid while open.
+        val la = kf(t, 0f, .5f, .26f, .5f, .3f, 1f, .74f, 1f, .78f, .5f)
+        circleIcon(c, cx, ly, 17f, R.drawable.ic_wafflr, Paper.BLUE, 0xFFFFFFFF.toInt(), 16f, la)
+        // Finger taps: on the tucked edge, then on the waffle to open, then to close.
+        tap(c, 210f, ly, .06f, .16f)
+        tap(c, lx, ly, .24f, .34f)
+        tap(c, lx, ly, .64f, .74f)
+    }
+
+    /** A finger tap: a ring that grows and fades between [from] and [to]. */
+    private fun tap(c: Canvas, x: Float, y: Float, from: Float, to: Float) {
+        if (t < from || t > to) return
+        val f = (t - from) / (to - from)
+        val a = if (f < 0.3f) f / 0.3f * 0.8f else 0.8f * (1 - (f - 0.3f) / 0.7f)
+        stroke.color = Paper.INK; stroke.strokeWidth = 3f; stroke.alpha = (a * 255).toInt()
+        c.drawCircle(x, y, 21.5f * (0.6f + 1.2f * f), stroke)
     }
 
     private fun step2(c: Canvas) {
         val col = 0xFFCFC8BA.toInt()
         val at = page(c, listOf(title(), gap(14f)) + lines(col, 1f, .92f, .96f, .6f) + gap(22f) + lines(col, .98f, .88f, .94f, .4f))
-        val p1 = around(at.subList(2, 6))
-        val p2 = around(at.subList(7, 11))
-        val m = kf(t, 0f, 0f, .44f, 0f, .54f, 1f)
-        val box = RectF(12f, lerp(p1.top, p2.top, m), 206f, lerp(p1.bottom, p2.bottom, m))
-        val a = kf(t, 0f, 0f, .08f, 0f, .12f, 1f, .92f, 1f, 1f, 0f)
-        highlight(c, box, 10f, a)
-        // The underline steps from word to word.
-        val (ux, uw) = when {
-            t < .22f -> 0f to 28f; t < .32f -> 34f to 40f; t < .42f -> 80f to 26f; t < .54f -> 112f to 46f
-            t < .64f -> 0f to 36f; t < .74f -> 42f to 30f; t < .86f -> 78f to 52f; else -> 136f to 30f
-        }
-        if (a > 0) {
-            p.color = Paper.UNDERLINE; p.alpha = (a * 255).toInt()
-            val uy = box.top + 10f + 7f + 2.5f
-            r.set(18f + ux, uy, 18f + ux + uw, uy + 3f); c.drawRoundRect(r, 1.5f, 1.5f, p)
-            p.alpha = 255
+        // Like the real thing: the box stays on a paragraph while it's read, goes, then appears on the next.
+        val paras = listOf(at.subList(2, 6) to (0f to .46f), at.subList(7, 11) to (.52f to .98f))
+        for ((para, span) in paras) {
+            val (start, end) = span
+            if (t < start || t > end) continue
+            val a = kf(t, start, 0f, start + .03f, 1f, end - .03f, 1f, end, 0f)
+            highlight(c, around(para), 10f, a)
+            // The underline steps along each line, word by word.
+            val words = WORDS
+            val readStart = start + .04f
+            val readEnd = end - .05f
+            val i = (((t - readStart) / (readEnd - readStart)) * words.size).toInt().coerceIn(0, words.size - 1)
+            if (t >= readStart) {
+                val (line, x, w) = words[i]
+                val l = para[line]
+                val right = minOf(l.left + x + w, l.right)
+                p.color = Paper.UNDERLINE; p.alpha = (a * 255).toInt()
+                r.set(l.left + x, l.bottom + 2f, right, l.bottom + 5f); c.drawRoundRect(r, 1.5f, 1.5f, p)
+                p.alpha = 255
+            }
         }
         // Playback controls, with the speaker's sound bars moving.
         val y = 428f - 26f - 17f
@@ -397,10 +417,18 @@ class DemoView(ctx: Context, val kind: Kind) : View(ctx) {
         /** The frame shown when animations are turned off: one that explains the step. */
         private val STILL = mapOf(
             Kind.CARD_READ to 0.2f, Kind.CARD_DRAW to 0.7f, Kind.CARD_SELECT to 0.6f,
-            Kind.STEP1 to 0.6f, Kind.STEP2 to 0.3f, Kind.STEP3 to 0.4f, Kind.STEP4 to 0.6f,
+            Kind.STEP1 to 0.5f, Kind.STEP2 to 0.25f, Kind.STEP3 to 0.4f, Kind.STEP4 to 0.6f,
         )
 
         private fun lerp(a: Float, b: Float, f: Float) = a + (b - a) * f
+
+        /** Pretend words in a paragraph, as (line, x, width), in reading order. */
+        private val WORDS = listOf(
+            Triple(0, 0f, 30f), Triple(0, 36f, 44f), Triple(0, 86f, 28f), Triple(0, 120f, 56f),
+            Triple(1, 0f, 40f), Triple(1, 46f, 30f), Triple(1, 82f, 50f), Triple(1, 138f, 26f),
+            Triple(2, 0f, 34f), Triple(2, 40f, 52f), Triple(2, 98f, 36f), Triple(2, 140f, 32f),
+            Triple(3, 0f, 44f), Triple(3, 50f, 56f),
+        )
 
         /**
          * Value at time [t] from keyframes given as (time, value) pairs, eased in and out between
