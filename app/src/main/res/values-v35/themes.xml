@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 15+ draws apps edge to edge, which put the top of each screen behind the title
-         bar. Wafflr's simple screens keep the classic layout: content starts below the bar. -->
-    <style name="Theme.Wafflr" parent="@android:style/Theme.DeviceDefault.DayNight">
+    <!-- Android 15+ draws apps edge to edge, which would put the top of each screen behind the
+         status bar. Wafflr's screens keep the classic layout: content starts below the bar. -->
+    <style name="Theme.Wafflr" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:windowBackground">@color/paper</item>
+        <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorAccent">@color/wafflr_blue</item>
+        <item name="android:colorPrimary">@color/wafflr_blue</item>
+        <item name="android:textColorPrimary">@color/ink</item>
     </style>
 </resources>

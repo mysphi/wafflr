@@ -18,6 +18,8 @@ data class ReaderStatus(
     val index: Int = 0,
     val total: Int = 0,
     val message: String = "",
+    /** Where on screen the text being read is, if known, for the highlight. */
+    val region: SentenceSpot? = null,
 )
 
 /** Timings from one read, used to compare voices on the phone. */
@@ -49,6 +51,9 @@ data class SpeechResult(
     }
 }
 
+/** A sentence written to the speaker: its index, first frame and length in frames. */
+private class Segment(val index: Int, val start: Long, val length: Int)
+
 interface ReaderListener {
     fun onStatus(status: ReaderStatus) {}
     fun onFinished(result: SpeechResult) {}
@@ -75,9 +80,46 @@ class Reader(private val context: Context, private val models: Models) {
 
     val isActive: Boolean get() = status.state != ReaderState.IDLE
 
-    fun read(text: String, voice: Voice, speed: Float, threads: Int, source: String, tuning: Tuning = Tuning()) {
-        stop()
+    /** Reads [text]. If [area] is given (a drawn area), it is highlighted for the whole read. */
+    fun read(
+        text: String, voice: Voice, speed: Float, threads: Int, source: String,
+        tuning: Tuning = Tuning(), area: android.graphics.Rect? = null,
+    ) {
         val sentences = TextSplitter.split(text)
+        val spot = area?.let { SentenceSpot(Spot(it), -1) }
+        start(sentences, spot?.let { s -> List(sentences.size) { s } }, voice, speed, threads, source, tuning, text.length)
+    }
+
+    /**
+     * Reads pieces of on-screen text, each with where it is on screen, so the piece being read
+     * can be highlighted.
+     */
+    fun readPieces(
+        pieces: List<Pair<String, Spot?>>, voice: Voice, speed: Float, threads: Int,
+        source: String, tuning: Tuning = Tuning(),
+    ) {
+        val sentences = mutableListOf<String>()
+        val regions = mutableListOf<SentenceSpot?>()
+        for ((text, spot) in pieces) {
+            var from = 0
+            val plain = text.replace('\u00A0', ' ') // same length; the splitter turns these into spaces
+            for (s in TextSplitter.split(text)) {
+                // Where the sentence starts in the node's text, for underlining its words.
+                val at = plain.indexOf(s, from)
+                if (at >= 0) from = at + s.length
+                sentences += s
+                regions += spot?.let { SentenceSpot(it, if (at >= 0 && it.node != null) it.textStart + at else -1) }
+            }
+        }
+        start(sentences, regions, voice, speed, threads, source, tuning, pieces.sumOf { it.first.length })
+    }
+
+    private fun start(
+        sentences: List<String>, regions: List<SentenceSpot?>?, voice: Voice, speed: Float,
+        threads: Int, source: String, tuning: Tuning, chars: Int,
+    ) {
+        stop()
+        main.removeCallbacks(releaseWhenIdle)
         if (sentences.isEmpty()) {
             publishError("There is no text to read.")
             return
@@ -85,7 +127,7 @@ class Reader(private val context: Context, private val models: Models) {
         // Note non-default tuning in the test report.
         val label = if (tuning == Tuning()) source
             else "$source, pitch %.2f, expression %.2f".format(tuning.pitch, tuning.expression)
-        val s = Session(sentences, voice, speed, threads, label, text.length, tuning)
+        val s = Session(sentences, voice, speed, threads, label, chars, tuning, regions)
         session = s
         s.start()
     }
@@ -94,6 +136,9 @@ class Reader(private val context: Context, private val models: Models) {
         val s = session ?: return
         if (s.paused) s.resume() else s.pause()
     }
+
+    /** What is being heard right now, for the highlight; null when nothing is playing. */
+    fun nowPlaying(): NowPlaying? = session?.nowPlaying()
 
     fun pause() { session?.pause() }
     fun resume() { session?.resume() }
@@ -108,8 +153,17 @@ class Reader(private val context: Context, private val models: Models) {
         main.post { listeners.forEach { it.onStatus(status) } }
     }
 
-    private fun publish(st: ReaderStatus, from: Session) {
-        if (session !== from && st.state != ReaderState.IDLE) return
+    /** Frees the voice's memory after a few idle minutes; the next read loads it again. */
+    private val releaseWhenIdle = Runnable { if (!isActive) models.releaseAll() }
+
+    private fun publish(status0: ReaderStatus, from: Session) {
+        if (session !== from && status0.state != ReaderState.IDLE) return
+        val playing = status0.state == ReaderState.PLAYING || status0.state == ReaderState.PAUSED
+        val st = if (playing && from.regions != null) status0.copy(region = from.regions.getOrNull(status0.index)) else status0
+        if (st.state == ReaderState.IDLE) {
+            main.removeCallbacks(releaseWhenIdle)
+            main.postDelayed(releaseWhenIdle, IDLE_RELEASE_MS)
+        }
         status = st
         main.post { listeners.forEach { it.onStatus(st) } }
     }
@@ -126,7 +180,56 @@ class Reader(private val context: Context, private val models: Models) {
         val source: String,
         val chars: Int,
         val tuning: Tuning,
+        val regions: List<SentenceSpot?>?,
     ) {
+        /** What has been written to the speaker, so the sentence being heard can be found. */
+        private val segments = ArrayDeque<Segment>()
+        private var written = 0L
+
+        /** The track was flushed: its play position starts again from zero. */
+        private fun resetTimeline() = synchronized(segments) { segments.clear(); written = 0; lastHeard = 0 }
+
+        private val stamp = android.media.AudioTimestamp()
+
+        /**
+         * The frame reaching the speaker now. The play position counts frames handed to the
+         * audio system, which can be a good fraction of a second ahead of what's heard (more on
+         * Bluetooth), so the track's timestamp, which says when a frame actually plays, is used
+         * where it's available.
+         */
+        private fun heardPosition(t: AudioTrack): Long {
+            val head = t.playbackHeadPosition.toLong() and 0xffffffffL
+            val playing = t.playState == AudioTrack.PLAYSTATE_PLAYING
+            val raw = when {
+                !playing -> if (lastHeard > 0) lastHeard else head // paused: stay put
+                !t.getTimestamp(stamp) -> head
+                else -> {
+                    val age = System.nanoTime() - stamp.nanoTime
+                    if (age < 0 || age > 2_000_000_000L) head
+                    else stamp.framePosition + age * t.sampleRate / 1_000_000_000L
+                }
+            }
+            // Never step backwards: a fresh timestamp can land slightly behind the last estimate,
+            // which at the end of a sentence would flick the highlight back to the one before.
+            val heard = maxOf(raw.coerceIn(0L, head), lastHeard.coerceAtMost(head))
+            lastHeard = heard
+            return heard
+        }
+        @Volatile private var lastHeard = 0L
+
+        /** The sentence being heard and how far through it, from the speaker's play position. */
+        fun nowPlaying(): NowPlaying? {
+            val t = track ?: return null
+            val head = try { heardPosition(t) } catch (_: Throwable) { return null }
+            val seg = synchronized(segments) {
+                segments.lastOrNull { head >= it.start } ?: return null
+            }
+            val frame = (head - seg.start).toInt().coerceIn(0, seg.length)
+            val fraction = frame.toFloat() / seg.length.coerceAtLeast(1)
+            val plan = synchronized(lock) { plans[seg.index] }
+            return NowPlaying(seg.index, fraction, sentences[seg.index], regions?.getOrNull(seg.index), frame, plan)
+        }
+
         private val lock = Object()
         private var cur = 0
         private var jumpTo = -1
@@ -135,6 +238,8 @@ class Reader(private val context: Context, private val models: Models) {
         private var stopped = false
         private var pausedByFocus = false
         private val cache = HashMap<Int, FloatArray>()
+        /** When each word is spoken, worked out from each sentence's audio (for the underline). */
+        private val plans = HashMap<Int, WordTimer.Plan>()
         private var genError: Throwable? = null
         @Volatile private var track: AudioTrack? = null
         private var focusRequest: AudioFocusRequest? = null
@@ -177,7 +282,7 @@ class Reader(private val context: Context, private val models: Models) {
                 lock.notifyAll()
             }
             // Drop the rest of the current sentence straight away (also frees a blocked write).
-            try { track?.let { it.pause(); it.flush(); if (!paused) it.play() } } catch (_: Throwable) {}
+            try { track?.let { it.pause(); it.flush(); resetTimeline(); if (!paused) it.play() } } catch (_: Throwable) {}
         }
 
         fun stop() {
@@ -248,6 +353,10 @@ class Reader(private val context: Context, private val models: Models) {
                     if (jumpTo >= 0) null else cache[i]
                 } ?: continue
 
+                synchronized(segments) {
+                    segments.addLast(Segment(i, written, audio.size))
+                    while (segments.size > 8) segments.removeFirst()
+                }
                 var off = 0
                 var jumped = false
                 while (off < audio.size) {
@@ -260,9 +369,10 @@ class Reader(private val context: Context, private val models: Models) {
                     val w = t.write(audio, off, minOf(BLOCK, audio.size - off), AudioTrack.WRITE_BLOCKING)
                     if (w <= 0) break
                     off += w
+                    synchronized(segments) { written += w }
                 }
                 if (jumped) {
-                    t.pause(); t.flush()
+                    t.pause(); t.flush(); resetTimeline()
                     if (!paused) t.play()
                     continue
                 }
@@ -294,14 +404,19 @@ class Reader(private val context: Context, private val models: Models) {
                             lock.wait()
                         }
                         cache.keys.removeAll { it < cur - 2 }
+                        plans.keys.removeAll { it < cur - 2 }
                     }
                     val t0 = SystemClock.elapsedRealtime()
                     val audio = PitchShift.apply(
-                        models.generate(model, sentences[target], voice.sid, speed), model.sampleRate, tuning.pitch,
+                        models.generate(model, Pronounce.forSpeech(sentences[target], voice.language), voice.sid, speed), model.sampleRate, tuning.pitch,
                     )
                     val took = SystemClock.elapsedRealtime() - t0
+                    val plan = if (regions != null) {
+                        try { WordTimer.plan(sentences[target], audio, model.sampleRate) } catch (_: Throwable) { null }
+                    } else null
                     synchronized(lock) {
                         cache[target] = audio
+                        if (plan != null) plans[target] = plan
                         if (counted.add(target)) {
                             synthMs += took
                             audioSamples += audio.size
@@ -359,6 +474,7 @@ class Reader(private val context: Context, private val models: Models) {
     companion object {
         private const val BLOCK = 2048
         private const val LOOKAHEAD = 3
+        private const val IDLE_RELEASE_MS = 3 * 60_000L
         private val attributes: AudioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

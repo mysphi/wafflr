@@ -17,15 +17,28 @@ class ReadAloudActivity : Activity() {
         super.onCreate(savedInstanceState)
         val shared = intent.action == Intent.ACTION_SEND
         val text = (if (shared) intent.getCharSequenceExtra(Intent.EXTRA_TEXT) else intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT))
-            ?.toString().orEmpty().trim()
+            ?.toString().orEmpty().trim().take(MAX_CHARS)
         val from = callingPackage ?: referrer?.host ?: "another app"
         val app = WafflrApp.instance
         val p = app.prefs
 
+        val km = getSystemService(android.app.KeyguardManager::class.java)
+        if (km?.isKeyguardLocked == true) {
+            // Nothing of Wafflr works over the lock screen.
+            finish()
+            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+            return
+        }
         if (text.isEmpty()) {
             Toast.makeText(this, "Wafflr: no text was received.", Toast.LENGTH_SHORT).show()
         } else {
-            app.reader.read(text, p.voice, p.speed, p.threads, if (shared) "shared from $from" else "selection in $from", p.tuning)
+            val service = WafflrService.instance
+            if (!shared && service != null) {
+                // Selected on screen: find it there so it can be highlighted as it's read.
+                service.readSelection(text, "selection in $from")
+            } else {
+                app.reader.read(text, p.voice, p.speed, p.threads, if (shared) "shared from $from" else "selection in $from", p.tuning)
+            }
             if (WafflrService.instance == null || !p.bubbleEnabled) {
                 // No floating controls to pause or stop with: say how to get them.
                 Toast.makeText(this, "Reading. Turn on Wafflr's floating button in Settings to pause or stop.", Toast.LENGTH_LONG).show()
@@ -33,5 +46,10 @@ class ReadAloudActivity : Activity() {
         }
         finish()
         @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+    }
+
+    companion object {
+        /** Longest text accepted from another app (about two hours of speech). */
+        private const val MAX_CHARS = 200_000
     }
 }

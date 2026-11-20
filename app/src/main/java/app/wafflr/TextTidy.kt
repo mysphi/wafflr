@@ -15,7 +15,8 @@ package app.wafflr
  * Plain Kotlin with no Android calls, so it can be checked off the phone.
  */
 object TextTidy {
-    class Result(val lines: List<String>, val skipped: Int)
+    /** [kept]: positions in the input of the lines kept, so callers can keep data alongside. */
+    class Result(val lines: List<String>, val skipped: Int, val kept: List<Int>)
 
     private val months = "jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?"
     private val datePatterns = listOf(
@@ -43,19 +44,20 @@ object TextTidy {
 
     fun tidy(lines: List<String>, options: ReadOptions = ReadOptions()): Result {
         var skipped = 0
-        val kept = lines.filter { line ->
+        val kept = lines.indices.filter { i ->
+            val line = lines[i]
             val drop = (!options.pictures && isImageLabel(line)) || (!options.details && isDetail(line))
             if (drop) skipped++
             !drop
         }
         // Lead-in: drop short non-sentences before the first real sentence.
-        val first = if (options.leadIn) -1 else kept.indexOfFirst { isSentence(it) }
-        if (first <= 0) return Result(kept, skipped)
-        val out = mutableListOf<String>()
-        for ((i, line) in kept.withIndex()) {
-            if (i < first && !greeting.containsMatchIn(line)) skipped++ else out += line
+        val first = if (options.leadIn) -1 else kept.indexOfFirst { isSentence(lines[it]) }
+        val out = if (first <= 0) kept else kept.filterIndexed { k, i ->
+            val keep = k >= first || greeting.containsMatchIn(lines[i])
+            if (!keep) skipped++
+            keep
         }
-        return Result(out, skipped)
+        return Result(out.map { lines[it] }, skipped, out)
     }
 
     private fun words(s: String) = s.split(Regex("\\s+")).count { it.isNotEmpty() }

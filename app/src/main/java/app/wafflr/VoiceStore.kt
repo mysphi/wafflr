@@ -31,6 +31,11 @@ class VoiceStore(private val context: Context) {
         } else {
             val archive = File(context.cacheDir, pack.dirName + ".tar.bz2")
             download(pack.url, archive, progress)
+            progress("Checking the download…")
+            if (pack.sha256.isNotEmpty() && sha256(archive) != pack.sha256) {
+                archive.delete()
+                error("the download didn't match the expected voice file, so it wasn't installed. Please try again.")
+            }
             progress("Unpacking ${pack.dirName}… (this can take a minute)")
             extract(archive, tmp)
             archive.delete()
@@ -56,6 +61,15 @@ class VoiceStore(private val context: Context) {
                 FileOutputStream(out).use { input.copyTo(it, 1 shl 16) }
             }
         }
+    }
+
+    private fun sha256(file: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buf = ByteArray(1 shl 16)
+            while (true) { val n = input.read(buf); if (n < 0) break; md.update(buf, 0, n) }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun download(url: String, dest: File, progress: (String) -> Unit) {

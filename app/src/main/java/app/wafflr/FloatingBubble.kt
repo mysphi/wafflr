@@ -1,5 +1,6 @@
 package app.wafflr
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -24,7 +25,10 @@ import kotlin.math.abs
  *
  *  - The Wafflr logo always stays on screen at the edge, small and faded. Tap it to open or
  *    close the controls (it just turns solid; it never moves); drag it to move; long-press it
- *    to open the Wafflr app.
+ *    to open the Wafflr app. Its size and gap from the edge are set in Settings.
+ *  - Tucking: drag the logo into the edge of the screen and it tucks mostly out of sight (or,
+ *    with the setting on, it tucks itself away after a few seconds unused). Tap the part still
+ *    showing to bring it back.
  *  - When open, the speaker button slides out of the logo: upwards, or downwards when the logo
  *    is near the top of the screen. Tap it to read the whole screen (never the clipboard);
  *    while reading it becomes pause / resume.
@@ -47,12 +51,12 @@ class FloatingBubble(
     private fun dp(v: Int) = (v * density).toInt()
     private val main = Handler(Looper.getMainLooper())
     private val size = dp(52)
-    private val logoSize = dp(38) // smaller than the buttons, and faded until opened
+    private val logoSize = dp(prefs.bubbleSize.coerceIn(MIN_SIZE, MAX_SIZE)) // faded until opened
     private val gap = dp(10)
     private val pad = dp(6) // room for shadows around every button
-    private val inset = (size - logoSize) / 2 // lines the logo's centre up with the speaker's
+    private val edgeGap = dp(prefs.bubbleEdge.coerceIn(0, MAX_EDGE)) // from the screen edge to the logo
 
-    private val logo = RoundButton(R.drawable.ic_wafflr, "Wafflr: show or hide controls")
+    private val logo = RoundButton(R.drawable.ic_wafflr, "Wafflr: show or hide controls", iconSize = (logoSize * 0.63f).toInt(), diameter = logoSize)
     private val speaker = RoundButton(R.drawable.ic_speaker, "Read aloud").apply { setOnClickListener { onSpeakerTap() } }
     private val options = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -84,6 +88,9 @@ class FloatingBubble(
     private var openedForReading = false
     private var state = ReaderState.IDLE
     private var optionsFor: Boolean? = null // which set of options is showing: true = playback
+    private var tucked = false
+    private var tuckAnim: ValueAnimator? = null
+    private val autoTuck = Runnable { setTucked(true) }
 
     /** Options slide out towards the middle of the screen: to the left when docked on the right. */
     private val onRight get() = prefs.bubbleRight
@@ -101,10 +108,13 @@ class FloatingBubble(
         wm.addView(logoRoot, logoParams)
         shown = true
         reader.addListener(this)
+        scheduleTuck()
     }
 
     fun hide() {
         if (!shown) return
+        main.removeCallbacks(autoTuck)
+        tuckAnim?.cancel()
         reader.removeListener(this)
         removeControls()
         try { wm.removeView(logoRoot) } catch (_: Throwable) {}
@@ -124,13 +134,14 @@ class FloatingBubble(
     private fun build() {
         // Logo window: just the logo, at a fixed spot on the edge.
         logoRoot.removeAllViews()
-        val edge = pad + inset
+        val edge = edgeGap
         logoRoot.setPadding(if (onRight) pad else edge, pad, if (onRight) edge else pad, pad)
         logoRoot.addView(logo, FrameLayout.LayoutParams(logoSize, logoSize))
         logo.alpha = logoAlpha()
         logo.setOnTouchListener(DragHandler())
         logoParams.gravity = Gravity.TOP or if (onRight) Gravity.END else Gravity.START
         logoParams.x = 0
+        tucked = false
         logoParams.y = prefs.bubbleY.takeIf { it >= 0 }?.let { clampY(it) } ?: (screen.height() * 0.6).toInt()
 
         // Controls window: speaker plus options, beside the speaker towards the middle.
@@ -146,9 +157,38 @@ class FloatingBubble(
         }
         controlsRoot.addView(row, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, size))
         controlsParams.gravity = logoParams.gravity
-        controlsParams.x = 0
+        // Line the speaker's centre up with the logo's.
+        controlsParams.x = (edgeGap + logoSize / 2 - pad - size / 2).coerceAtLeast(0)
         optionsFor = null
         refreshOptions(animate = false)
+    }
+
+    // --- tucking into the edge -------------------------------------------------------------
+
+    /** How far off the edge the logo goes when tucked: about two thirds of it. */
+    private fun tuckedX() = -(edgeGap + (logoSize * 0.65f).toInt())
+
+    private fun setTucked(on: Boolean) {
+        if (on && (expanded || state != ReaderState.IDLE || !shown)) return
+        main.removeCallbacks(autoTuck)
+        if (on == tucked) return
+        tucked = on
+        tuckAnim?.cancel()
+        tuckAnim = ValueAnimator.ofInt(logoParams.x, if (on) tuckedX() else 0).apply {
+            duration = 220
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                logoParams.x = it.animatedValue as Int
+                try { if (shown) wm.updateViewLayout(logoRoot, logoParams) } catch (_: Throwable) {}
+            }
+            start()
+        }
+    }
+
+    /** With the setting on, tuck away after a few seconds unused. */
+    private fun scheduleTuck() {
+        main.removeCallbacks(autoTuck)
+        if (prefs.bubbleTuck && !expanded && state == ReaderState.IDLE) main.postDelayed(autoTuck, TUCK_DELAY_MS)
     }
 
     private fun clampY(y: Int) = y.coerceIn(statusBar, screen.height() - logoWindowH)
@@ -196,6 +236,7 @@ class FloatingBubble(
         if (open == expanded) return
         expanded = open
         if (!open) openedForReading = false
+        if (open) setTucked(false) else scheduleTuck()
         fadeLogo()
         speaker.animate().cancel()
         if (open) {
@@ -295,6 +336,7 @@ class FloatingBubble(
         )
         speaker.setBusy(state == ReaderState.PREPARING)
         fadeLogo()
+        if (state != ReaderState.IDLE) setTucked(false) else if (was != ReaderState.IDLE) scheduleTuck()
         refreshOptions(animate = true)
         if (state != ReaderState.IDLE && !expanded) {
             // Reading started from elsewhere (e.g. Share): show the player.
@@ -314,7 +356,13 @@ class FloatingBubble(
      * blue; the options beside them are pale blue with blue icons, so the main action stands out.
      * Flat, no outline, a soft shadow.
      */
-    private inner class RoundButton(icon: Int, label: String, primary: Boolean = true) : FrameLayout(context) {
+    private inner class RoundButton(
+        icon: Int,
+        label: String,
+        primary: Boolean = true,
+        iconSize: Int = dp(24),
+        diameter: Int = size,
+    ) : FrameLayout(context) {
         private val image = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         private val spinner = ProgressBar(context).apply {
             isIndeterminate = true
@@ -331,9 +379,8 @@ class FloatingBubble(
             elevation = dp(3).toFloat()
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
             isClickable = true
-            val iconSize = dp(24)
             addView(image, LayoutParams(iconSize, iconSize, Gravity.CENTER))
-            addView(spinner, LayoutParams(size - dp(8), size - dp(8), Gravity.CENTER))
+            addView(spinner, LayoutParams(diameter - dp(8), diameter - dp(8), Gravity.CENTER))
             setIcon(icon, label)
         }
 
@@ -379,6 +426,10 @@ class FloatingBubble(
                     if (!dragging && (abs(dx) > slop || abs(dy) > slop)) {
                         dragging = true
                         main.removeCallbacks(longPress)
+                        main.removeCallbacks(autoTuck)
+                        tuckAnim?.cancel()
+                        tucked = false
+                        logoParams.x = 0
                     }
                     if (dragging) {
                         logoParams.y = clampY((startY + dy).toInt())
@@ -406,9 +457,17 @@ class FloatingBubble(
                             wm.updateViewLayout(logoRoot, logoParams)
                             if (wasOpen) setExpanded(true)
                         }
+                        // Let go right at the edge: tuck it away (tap to bring it back).
+                        val atEdge = if (right) e.rawX > screenW - dp(EDGE_DROP_DP) else e.rawX < dp(EDGE_DROP_DP)
+                        if (atEdge && !expanded) setTucked(true) else scheduleTuck()
                     } else if (!longPressed) {
                         v.performClick()
-                        setExpanded(!expanded)
+                        if (tucked) {
+                            setTucked(false) // first tap just brings it back out
+                            scheduleTuck()
+                        } else {
+                            setExpanded(!expanded)
+                        }
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> main.removeCallbacks(longPress)
@@ -421,5 +480,10 @@ class FloatingBubble(
         private const val BLUE = "#2D6CDF"
         private const val PALE = "#E6EEFC"
         private const val IDLE_ALPHA = 0.45f
+        const val MIN_SIZE = 28
+        const val MAX_SIZE = 64
+        const val MAX_EDGE = 48
+        private const val TUCK_DELAY_MS = 4000L
+        private const val EDGE_DROP_DP = 14
     }
 }
